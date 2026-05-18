@@ -1,5 +1,5 @@
 """
-Market Intelligence Dashboard — See. Judge. Act.
+Market Analytics Dashboard 
 Port 8501: streamlit run dashboard/app.py
 """
 
@@ -555,7 +555,7 @@ div[data-testid="column"] .stButton > button:hover {{
 # Top-level tabs — market content renders into tab_market by default;
 # governance content is explicitly wrapped at the bottom of this file.
 # ---------------------------------------------------------------------------
-tab_market, tab_governance, tab_observability = st.tabs(["📈 Market Intelligence", "📋 Governance", "🔬 Observability"])
+tab_market, tab_governance, tab_observability = st.tabs(["📈 Market Analytics", "📋 Governance", "🔬 Observability"])
 
 # Switch Streamlit's active container to tab_market for all content below
 with tab_market:
@@ -672,7 +672,7 @@ with tab_market:
                 padding:12px 0 12px 0;display:flex;align-items:center;
                 justify-content:space-between;margin-bottom:0;">
         <span style="font-size:22px;font-weight:700;color:{_P['text_pri']};letter-spacing:-0.4px;">
-            Market Intelligence Platform
+            Market Analytics
         </span>
         <span style="font-size:11px;color:{_P['text_sec']};">
              Post-trade operations
