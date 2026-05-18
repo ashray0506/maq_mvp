@@ -308,67 +308,104 @@ def evaluate_nba_rules(df: pd.DataFrame) -> list[dict]:
     return sorted(rules, key=lambda r: order.get(r["severity"], 9))
 
 
-def call_llm(rules: list[dict], latest_row: pd.Series) -> str:
-    import requests as req
+def _fmt_val(val, fmt=".2f", suffix="") -> str:
+    try:
+        return f"{float(val):{fmt}}{suffix}" if val is not None and not pd.isna(val) else "N/A"
+    except (TypeError, ValueError):
+        return "N/A"
 
-    if not KIMI_API_KEY:
-        return _rule_based_summary(rules, latest_row)
 
-    def _fmt(val, fmt=".2f", suffix=""):
-        try:
-            return f"{float(val):{fmt}}{suffix}" if val is not None and not pd.isna(val) else "N/A"
-        except (TypeError, ValueError):
-            return "N/A"
-
+def _build_market_context(row: pd.Series, rules: list[dict]) -> str:
+    """Build the shared market context string passed to the LLM."""
     triggered = ", ".join(r["name"] for r in rules) if rules else "none"
-    context = (
+    return (
         f"Symbol: {SYMBOL}\n"
-        f"Close: {_fmt(latest_row.get('close'))}\n"
-        f"RSI-14: {_fmt(latest_row.get('rsi_14'), '.1f')}\n"
-        f"Sharpe 20d: {_fmt(latest_row.get('sharpe_20d'))}\n"
-        f"Max Drawdown 90d: {_fmt(latest_row.get('mdd_90d'), '.1f', '%')}\n"
-        f"Volatility 20d: {_fmt(latest_row.get('volatility_20d'), '.1f', '%')}\n"
-        f"Fed Funds Rate: {_fmt(latest_row.get('macro_value'), '.2f', '%')}\n"
-        f"Yield Spread (GS10-FEDFUNDS): {_fmt(latest_row.get('yield_spread'), '.2f', '%')}\n"
+        f"Close: {_fmt_val(row.get('close'))}\n"
+        f"RSI-14: {_fmt_val(row.get('rsi_14'), '.1f')}\n"
+        f"VWAP 20d: {_fmt_val(row.get('vwap_20d'))}\n"
+        f"Sharpe 20d: {_fmt_val(row.get('sharpe_20d'))}\n"
+        f"Max Drawdown 90d: {_fmt_val(row.get('mdd_90d'), '.1f', '%')}\n"
+        f"Volatility 20d: {_fmt_val(row.get('volatility_20d'), '.1f', '%')}\n"
+        f"VWAP Efficiency: {_fmt_val(row.get('vwap_efficiency'), '.1f')}\n"
+        f"Fed Funds Rate: {_fmt_val(row.get('macro_value'), '.2f', '%')}\n"
+        f"GS10 10Y Treasury: {_fmt_val(row.get('gs10_value'), '.2f', '%')}\n"
+        f"Yield Spread (GS10-FEDFUNDS): {_fmt_val(row.get('yield_spread'), '.2f', '%')}\n"
+        f"EMA 3m: {_fmt_val(row.get('macro_ema_3m'), '.3f')}\n"
+        f"SMA 3m: {_fmt_val(row.get('macro_sma_3m'), '.3f')}\n"
         f"Triggered rules: {triggered}"
     )
 
+
+def _kimi_post(messages: list[dict], max_tokens: int = 400) -> tuple[str | None, str | None]:
+    """
+    POST to Kimi API. Returns (content, error_msg).
+    error_msg is None on success, set on any failure.
+    """
+    import requests as req
     try:
         resp = req.post(
-            "https://api.moonshot.cn/v1/chat/completions",
+            "https://api.moonshot.ai/v1/chat/completions",
             headers={"Authorization": f"Bearer {KIMI_API_KEY}", "Content-Type": "application/json"},
-            json={
-                "model": "moonshot-v1-8k",
-                "messages": [
-                    {"role": "system", "content": (
-                        "You are a senior portfolio analyst. Provide a concise 3–4 sentence "
-                        "market assessment for a portfolio manager. Be factual, reference the "
-                        "data, and note any key risks. Do not give specific buy/sell instructions."
-                    )},
-                    {"role": "user", "content": f"Current market data:\n{context}"},
-                ],
-                "max_tokens": 300,
-                "temperature": 0.3,
-            },
+            json={"model": "moonshot-v1-8k", "messages": messages,
+                  "max_tokens": max_tokens, "temperature": 0.3},
             timeout=15,
         )
         if resp.status_code == 401:
-            return (
-                "AI analyst offline — API key invalid or expired. "
-                "Update KIMI_API_KEY in .env to enable AI analysis.\n\n"
-                + _rule_based_summary(rules, latest_row)
-            )
+            return None, "AI analyst offline — API key invalid or expired. Update KIMI_API_KEY in .env."
         if resp.status_code != 200:
-            return f"AI analyst offline — API error {resp.status_code}.\n\n" + _rule_based_summary(rules, latest_row)
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
+            return None, f"AI analyst offline — API error {resp.status_code}."
+        return resp.json()["choices"][0]["message"]["content"].strip(), None
     except req.exceptions.Timeout:
-        return "AI analyst offline — request timed out.\n\n" + _rule_based_summary(rules, latest_row)
-    except Exception:
-        return _rule_based_summary(rules, latest_row)
+        return None, "AI analyst offline — request timed out."
+    except Exception as exc:
+        return None, f"AI analyst offline — {exc}"
 
 
-def _rule_based_summary(rules: list[dict], latest_row: pd.Series) -> str:
+def call_llm(rules: list[dict], latest_row: pd.Series) -> str:
+    if not KIMI_API_KEY:
+        return _rule_based_summary(rules)
+
+    context = _build_market_context(latest_row, rules)
+    messages = [
+        {"role": "system", "content": (
+            "You are a senior portfolio analyst. Provide a concise 3–4 sentence "
+            "market assessment for a portfolio manager. Be factual, reference the "
+            "data, and note any key risks. Do not give specific buy/sell instructions."
+        )},
+        {"role": "user", "content": f"Current market data:\n{context}"},
+    ]
+    content, err = _kimi_post(messages)
+    if err:
+        return err + "\n\n" + _rule_based_summary(rules)
+    return content
+
+
+def call_llm_chat(question: str, latest_row: pd.Series, rules: list[dict],
+                  history: list[dict]) -> str:
+    """Answer a free-form question with full market context + conversation history."""
+    if not KIMI_API_KEY:
+        return "AI analyst offline — KIMI_API_KEY not configured. Update .env to enable chat."
+
+    context = _build_market_context(latest_row, rules)
+    system_msg = (
+        "You are a senior portfolio analyst assistant for a post-trade operations team. "
+        "You have access to the current market snapshot below. Answer questions concisely "
+        "and accurately. Reference specific numbers from the data when relevant. "
+        "Do not invent data not provided. Do not give specific buy/sell instructions.\n\n"
+        f"Current market snapshot:\n{context}"
+    )
+    messages = [{"role": "system", "content": system_msg}]
+    # Include up to last 6 turns of history for context
+    messages.extend(history[-6:])
+    messages.append({"role": "user", "content": question})
+
+    content, err = _kimi_post(messages, max_tokens=500)
+    if err:
+        return err
+    return content
+
+
+def _rule_based_summary(rules: list[dict]) -> str:
     if not rules:
         return (
             f"{SYMBOL} signals are within normal ranges. No rules triggered. "
@@ -395,73 +432,116 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-st.markdown("""
+# ---------------------------------------------------------------------------
+# Dark / Light mode state
+# ---------------------------------------------------------------------------
+if "dark_mode" not in st.session_state:
+    st.session_state["dark_mode"] = False
+
+_dark = st.session_state["dark_mode"]
+
+# Palette — swaps on toggle
+_P = {
+    "page_bg":    "#1a1a2e" if _dark else "#f8f9fa",
+    "card_bg":    "#16213e" if _dark else "#ffffff",
+    "border":     "#2a2a4a" if _dark else "#e8eaed",
+    "text_pri":   "#e8eaf6" if _dark else "#1a1a2e",
+    "text_sec":   "#7986cb" if _dark else "#9aa0a6",
+    "text_body":  "#b0bec5" if _dark else "#5f6368",
+    "hover_bg":   "#0d1b2a" if _dark else "#f8f9fa",
+    "input_bg":   "#1e2a3a" if _dark else "#ffffff",
+    "chip_bg":    "#1e2a3a" if _dark else "#f1f3f4",
+}
+
+st.markdown(f"""
 <style>
 /* Page background */
-.stApp { background: #f8f9fa; }
+.stApp {{ background: {_P['page_bg']}; }}
 
 /* Remove default Streamlit padding */
-.block-container { padding-top: 0 !important; padding-bottom: 0 !important; max-width: 100% !important; }
+.block-container {{ padding-top: 0 !important; padding-bottom: 0 !important; max-width: 100% !important; }}
 
 /* Hide Streamlit default header */
-header[data-testid="stHeader"] { display: none; }
+header[data-testid="stHeader"] {{ display: none; }}
 
 /* Column dividers */
-[data-testid="column"] {
-    background: #ffffff;
+[data-testid="column"] {{
+    background: {_P['card_bg']};
     padding: 20px 20px !important;
-    border-right: 1px solid #e8eaed;
-}
-[data-testid="column"]:last-child { border-right: none; }
+    border-right: 1px solid {_P['border']};
+}}
+[data-testid="column"]:last-child {{ border-right: none; }}
 
 /* Metric overrides */
-[data-testid="stMetric"] {
-    background: #ffffff;
-    border: 1px solid #e8eaed;
+[data-testid="stMetric"] {{
+    background: {_P['card_bg']};
+    border: 1px solid {_P['border']};
     border-radius: 6px;
     padding: 10px 14px;
-}
-[data-testid="stMetricLabel"] { font-size: 10px !important; color: #9aa0a6 !important; text-transform: uppercase; letter-spacing: .05em; }
-[data-testid="stMetricValue"] { font-size: 20px !important; font-weight: 500 !important; }
+}}
+[data-testid="stMetricLabel"] {{ font-size: 10px !important; color: {_P['text_sec']} !important; text-transform: uppercase; letter-spacing: .05em; }}
+[data-testid="stMetricValue"] {{ font-size: 20px !important; font-weight: 500 !important; color: {_P['text_pri']} !important; }}
 
 /* Button overrides */
-.stButton > button {
-    border: 1px solid #e8eaed !important;
-    background: #ffffff !important;
-    color: #5f6368 !important;
+.stButton > button {{
+    border: 1px solid {_P['border']} !important;
+    background: {_P['card_bg']} !important;
+    color: {_P['text_body']} !important;
     font-size: 11px !important;
     padding: 5px 10px !important;
     border-radius: 4px !important;
     width: 100%;
-}
-.stButton > button:hover {
-    background: #f8f9fa !important;
-    border-color: #9aa0a6 !important;
-}
+}}
+.stButton > button:hover {{
+    background: {_P['hover_bg']} !important;
+    border-color: {_P['text_sec']} !important;
+}}
+
+/* Text inputs */
+[data-testid="stTextInput"] input {{
+    background: {_P['input_bg']} !important;
+    color: {_P['text_pri']} !important;
+    border: 1px solid {_P['border']} !important;
+}}
 
 /* Info boxes */
-[data-testid="stInfo"] {
-    background: #f8f9fa !important;
-    border: 1px solid #e8eaed !important;
+[data-testid="stInfo"] {{
+    background: {_P['hover_bg']} !important;
+    border: 1px solid {_P['border']} !important;
     border-radius: 6px !important;
     font-size: 12px !important;
-    color: #5f6368 !important;
-}
+    color: {_P['text_body']} !important;
+}}
 
 /* Expander */
-[data-testid="stExpander"] {
-    border: 1px solid #e8eaed !important;
+[data-testid="stExpander"] {{
+    border: 1px solid {_P['border']} !important;
     border-radius: 6px !important;
-    background: #ffffff !important;
-}
+    background: {_P['card_bg']} !important;
+}}
+
+/* Dataframe */
+[data-testid="stDataFrame"] {{ background: {_P['card_bg']} !important; }}
 
 /* Divider */
-hr { border-color: #e8eaed !important; margin: 12px 0 !important; }
+hr {{ border-color: {_P['border']} !important; margin: 12px 0 !important; }}
 
 /* Caption */
-.stCaption { font-size: 10px !important; color: #9aa0a6 !important; }
+.stCaption {{ font-size: 10px !important; color: {_P['text_sec']} !important; }}
+
+/* Markdown text */
+.stMarkdown p, .stMarkdown li {{ color: {_P['text_body']}; }}
 </style>
 """, unsafe_allow_html=True)
+
+# ---------------------------------------------------------------------------
+# Top-level tabs — market content renders into tab_market by default;
+# governance content is explicitly wrapped at the bottom of this file.
+# ---------------------------------------------------------------------------
+tab_market, tab_governance = st.tabs(["📈 Market Intelligence", "📋 Governance"])
+
+# Switch Streamlit's active container to tab_market for all content below
+_tab_market_ctx = tab_market.__enter__()
 
 # ---------------------------------------------------------------------------
 # CHECKPOINT: Load data
@@ -532,17 +612,26 @@ try:
     rsi_hex = RAG_CSS.get(rsi_colour, "#555")
     rsi_bg = RAG_BG.get(rsi_colour, "#eee")
 
-    st.markdown("""
-<div style="background:#fff;border-bottom:1px solid #e8eaed;padding:12px 0 12px 0;
-            display:flex;align-items:center;justify-content:space-between;margin-bottom:0;">
-    <span style="font-size:15px;font-weight:500;color:#1a1a2e;letter-spacing:-0.2px;">
+    # Topbar with dark/light toggle
+    _tb_left, _tb_right = st.columns([8, 1])
+    with _tb_left:
+        st.markdown(f"""
+<div style="background:{_P['card_bg']};border-bottom:1px solid {_P['border']};
+            padding:12px 0 12px 0;display:flex;align-items:center;
+            justify-content:space-between;margin-bottom:0;">
+    <span style="font-size:15px;font-weight:500;color:{_P['text_pri']};letter-spacing:-0.2px;">
         Market Intelligence Platform
     </span>
-    <span style="font-size:11px;color:#9aa0a6;">
+    <span style="font-size:11px;color:{_P['text_sec']};">
         Really Big Bank · Post-trade operations
     </span>
 </div>
 """, unsafe_allow_html=True)
+    with _tb_right:
+        _toggle_label = "☀️ Light" if _dark else "🌙 Dark"
+        if st.button(_toggle_label, key="dark_mode_toggle"):
+            st.session_state["dark_mode"] = not _dark
+            st.rerun()
 
     # Determine RSI signal class
     _rsi_v = rsi_val if not pd.isna(rsi_val) else None
@@ -586,43 +675,43 @@ try:
         last_run_ts = ft.strftime("%Y-%m-%d %H:%M") if hasattr(ft, "strftime") else str(ft)[:19]
 
     st.markdown(f"""
-<div style="background:#fff;border-bottom:1px solid #e8eaed;padding:14px 0 10px 0;margin-bottom:0;">
+<div style="background:{_P['card_bg']};border-bottom:1px solid {_P['border']};padding:14px 0 10px 0;margin-bottom:0;">
   <div style="display:flex;align-items:baseline;gap:24px;margin-bottom:10px;flex-wrap:wrap;">
     <div>
-      <div style="font-size:10px;color:#9aa0a6;text-transform:uppercase;letter-spacing:.05em;">Index close</div>
-      <div style="font-size:22px;font-weight:500;color:#1a1a2e;line-height:1;">${close_val:.2f}</div>
+      <div style="font-size:10px;color:{_P['text_sec']};text-transform:uppercase;letter-spacing:.05em;">Index close</div>
+      <div style="font-size:22px;font-weight:500;color:{_P['text_pri']};line-height:1;">${close_val:.2f}</div>
       <div style="font-size:11px;color:{change_color}">{change_arrow} {abs(day_chg):.2f}%</div>
     </div>
-    <div style="width:1px;height:36px;background:#e8eaed;align-self:center;"></div>
+    <div style="width:1px;height:36px;background:{_P['border']};align-self:center;"></div>
     <div>
-      <div style="font-size:10px;color:#9aa0a6;text-transform:uppercase;letter-spacing:.05em;">VWAP 20d</div>
-      <div style="font-size:22px;font-weight:500;color:#1a1a2e;line-height:1;">{vwap_display}</div>
-      <div style="font-size:11px;color:#9aa0a6;">fair value</div>
+      <div style="font-size:10px;color:{_P['text_sec']};text-transform:uppercase;letter-spacing:.05em;">VWAP 20d</div>
+      <div style="font-size:22px;font-weight:500;color:{_P['text_pri']};line-height:1;">{vwap_display}</div>
+      <div style="font-size:11px;color:{_P['text_sec']};">fair value</div>
     </div>
-    <div style="width:1px;height:36px;background:#e8eaed;align-self:center;"></div>
+    <div style="width:1px;height:36px;background:{_P['border']};align-self:center;"></div>
     <div>
-      <div style="font-size:10px;color:#9aa0a6;text-transform:uppercase;letter-spacing:.05em;">RSI-14</div>
-      <div style="font-size:22px;font-weight:500;color:#1a1a2e;line-height:1;">{rsi_display}</div>
+      <div style="font-size:10px;color:{_P['text_sec']};text-transform:uppercase;letter-spacing:.05em;">RSI-14</div>
+      <div style="font-size:22px;font-weight:500;color:{_P['text_pri']};line-height:1;">{rsi_display}</div>
       <div style="font-size:11px;color:#b45309;">{rag_text.lower()}</div>
     </div>
-    <div style="width:1px;height:36px;background:#e8eaed;align-self:center;"></div>
+    <div style="width:1px;height:36px;background:{_P['border']};align-self:center;"></div>
     <div>
-      <div style="font-size:10px;color:#9aa0a6;text-transform:uppercase;letter-spacing:.05em;">Fed funds</div>
-      <div style="font-size:22px;font-weight:500;color:#1a1a2e;line-height:1;">{macro_display}</div>
-      <div style="font-size:11px;color:#9aa0a6;">risk-free rate</div>
+      <div style="font-size:10px;color:{_P['text_sec']};text-transform:uppercase;letter-spacing:.05em;">Fed funds</div>
+      <div style="font-size:22px;font-weight:500;color:{_P['text_pri']};line-height:1;">{macro_display}</div>
+      <div style="font-size:11px;color:{_P['text_sec']};">risk-free rate</div>
     </div>
-    <div style="width:1px;height:36px;background:#e8eaed;align-self:center;"></div>
+    <div style="width:1px;height:36px;background:{_P['border']};align-self:center;"></div>
     <div style="padding:5px 12px;border-radius:20px;font-size:12px;font-weight:500;
                 background:#{_bg};color:#{_fg};border:1px solid #{_border};align-self:center;">
       {rag_text}
     </div>
   </div>
-  <div style="display:flex;align-items:center;gap:16px;font-size:11px;color:#5f6368;flex-wrap:wrap;">
+  <div style="display:flex;align-items:center;gap:16px;font-size:11px;color:{_P['text_body']};flex-wrap:wrap;">
     <span>10Y Treasury <strong>{gs10_display}</strong></span>
     <span>Yield spread <strong style="color:{spread_color}">{spread_display}</strong></span>
     <span>Vol <strong>{vol_display}</strong></span>
     <span>MDD <strong>{mdd_display}</strong></span>
-    <span style="margin-left:auto;background:#f1f3f4;padding:2px 8px;border-radius:10px;">
+    <span style="margin-left:auto;background:{_P['chip_bg']};padding:2px 8px;border-radius:10px;color:{_P['text_sec']};">
       Run: {last_run_ts or '—'}
     </span>
   </div>
@@ -651,13 +740,13 @@ try:
 
     def kpi_tile(col, label, value, color, sublabel):
         col.markdown(f"""
-<div style="background:#fff;border:1px solid #e8eaed;border-radius:6px;
+<div style="background:{_P['card_bg']};border:1px solid {_P['border']};border-radius:6px;
             padding:10px 14px;height:72px;">
-  <div style="font-size:10px;color:#9aa0a6;text-transform:uppercase;
+  <div style="font-size:10px;color:{_P['text_sec']};text-transform:uppercase;
               letter-spacing:.05em;margin-bottom:4px;">{label}</div>
   <div style="font-size:18px;font-weight:500;color:{_tile_colors[color]};
               line-height:1;">{value}</div>
-  <div style="font-size:10px;color:#9aa0a6;margin-top:3px;">{sublabel}</div>
+  <div style="font-size:10px;color:{_P['text_sec']};margin-top:3px;">{sublabel}</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -863,23 +952,75 @@ with judge_col:
                 dot = _rule_dot_colors.get(rule["severity"], "#9aa0a6")
                 st.markdown(f"""
 <div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;
-            border:1px solid #e8eaed;border-radius:6px;margin-bottom:5px;background:#fff;">
+            border:1px solid {_P['border']};border-radius:6px;margin-bottom:5px;background:{_P['card_bg']};">
   <div style="width:8px;height:8px;border-radius:50%;background:{dot};
               flex-shrink:0;margin-top:3px;"></div>
   <div>
-    <div style="font-size:11px;font-weight:500;color:#1a1a2e;">{rule['name']}</div>
-    <div style="font-size:10px;color:#9aa0a6;">{rule['severity']} · {rule['action'][:60]}{'…' if len(rule['action'])>60 else ''}</div>
+    <div style="font-size:11px;font-weight:500;color:{_P['text_pri']};">{rule['name']}</div>
+    <div style="font-size:10px;color:{_P['text_sec']};">{rule['severity']} · {rule['action'][:60]}{'…' if len(rule['action'])>60 else ''}</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
         else:
-            st.markdown("""
+            st.markdown(f"""
 <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;
-            border:1px solid #e8eaed;border-radius:6px;background:#fff;">
+            border:1px solid {_P['border']};border-radius:6px;background:{_P['card_bg']};">
   <div style="width:8px;height:8px;border-radius:50%;background:#10b981;flex-shrink:0;"></div>
   <div style="font-size:11px;color:#166534;font-weight:500;">All signals within normal range</div>
 </div>
 """, unsafe_allow_html=True)
+
+        st.divider()
+
+        # Ask a question — chat with full market context
+        st.markdown("<div style='font-size:11px;color:#9aa0a6;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;'>Ask the analyst</div>", unsafe_allow_html=True)
+
+        if "chat_history" not in st.session_state:
+            st.session_state["chat_history"] = []  # list of {"role": str, "content": str}
+
+        # Render existing chat history
+        for msg in st.session_state["chat_history"]:
+            if msg["role"] == "user":
+                st.markdown(
+                    f'<div style="background:{_P["chip_bg"]};border-radius:6px;padding:8px 10px;'
+                    f'margin-bottom:4px;font-size:12px;color:{_P["text_pri"]};">'
+                    f'<strong>You:</strong> {msg["content"]}</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f'<div style="background:{_P["card_bg"]};border:1px solid {_P["border"]};border-radius:6px;'
+                    f'padding:8px 10px;margin-bottom:4px;font-size:12px;color:{_P["text_body"]};">'
+                    f'<strong>Analyst:</strong> {msg["content"]}</div>',
+                    unsafe_allow_html=True,
+                )
+
+        # Chat input
+        with st.form("chat_form", clear_on_submit=True):
+            user_q = st.text_input(
+                "Question",
+                placeholder="e.g. What does the yield spread mean right now?",
+                label_visibility="collapsed",
+            )
+            send = st.form_submit_button("Ask", use_container_width=True)
+            if send and user_q.strip():
+                with st.spinner("Thinking…"):
+                    answer = call_llm_chat(
+                        user_q.strip(), latest, triggered_rules,
+                        st.session_state["chat_history"],
+                    )
+                st.session_state["chat_history"].append({"role": "user", "content": user_q.strip()})
+                st.session_state["chat_history"].append({"role": "assistant", "content": answer})
+                # Keep last 10 turns
+                st.session_state["chat_history"] = st.session_state["chat_history"][-10:]
+                st.rerun()
+
+        if st.session_state["chat_history"]:
+            if st.button("Clear chat", key="clear_chat"):
+                st.session_state["chat_history"] = []
+                st.rerun()
+
+        st.divider()
 
         # Custom rule manager
         with st.expander("Custom Rule Manager"):
@@ -942,9 +1083,9 @@ with act_col:
         if triggered_rules:
             for rule in triggered_rules:
                 st.markdown(f"""
-<div style="border:1px solid #e8eaed;border-radius:6px;padding:10px 12px;margin-bottom:8px;background:#fff;">
-  <div style="font-size:12px;font-weight:500;color:#1a1a2e;margin-bottom:2px;">{rule['name']}</div>
-  <div style="font-size:10px;color:#9aa0a6;margin-bottom:6px;">{rule['severity']} · {rule['action'][:70]}{'…' if len(rule['action'])>70 else ''}</div>
+<div style="border:1px solid {_P['border']};border-radius:6px;padding:10px 12px;margin-bottom:8px;background:{_P['card_bg']};">
+  <div style="font-size:12px;font-weight:500;color:{_P['text_pri']};margin-bottom:2px;">{rule['name']}</div>
+  <div style="font-size:10px;color:{_P['text_sec']};margin-bottom:6px;">{rule['severity']} · {rule['action'][:70]}{'…' if len(rule['action'])>70 else ''}</div>
 </div>
 """, unsafe_allow_html=True)
                 b1, b2 = st.columns(2)
@@ -1088,8 +1229,8 @@ try:
     _dq_color = "#0f9d58" if _status == "PASS" else "#d93025"
 
     st.markdown(f"""
-<div style="background:#fff;border-top:1px solid #e8eaed;padding:8px 0;margin-top:16px;
-            display:flex;align-items:center;gap:20px;font-size:10px;color:#9aa0a6;flex-wrap:wrap;">
+<div style="background:{_P['card_bg']};border-top:1px solid {_P['border']};padding:8px 0;margin-top:16px;
+            display:flex;align-items:center;gap:20px;font-size:10px;color:{_P['text_sec']};flex-wrap:wrap;">
   <span>Last run: {_last_ts} UTC</span>
   <span>Rows in gold: {_rows}</span>
   <span style="color:{_dq_color};font-weight:500;">Status: {_status}</span>
@@ -1098,3 +1239,90 @@ try:
 """, unsafe_allow_html=True)
 except Exception as e:
     st.caption(f"Footer unavailable: {e}")
+
+# ---------------------------------------------------------------------------
+# Close tab_market context, open tab_governance
+# ---------------------------------------------------------------------------
+tab_market.__exit__(None, None, None)
+
+_gov_con = get_connection()
+
+with tab_governance:
+    st.markdown("### Data governance")
+    st.caption(
+        "Definitions and lineage maintained in DuckDB governance tables. "
+        "In production these would be registered in a data catalogue "
+        "(Alation, Collibra, or DataHub) and pulled via API."
+    )
+
+    gov_tab1, gov_tab2, gov_tab3 = st.tabs([
+        "Metric definitions", "Field definitions", "Data lineage"
+    ])
+
+    with gov_tab1:
+        CHECKPOINT = "gov_metrics"
+        try:
+            df_metrics = _gov_con.execute("""
+                SELECT display_name, definition, formula, source, sensitivity
+                FROM governance_definitions
+                WHERE category = 'metric'
+                ORDER BY definition_id
+            """).df()
+            df_metrics.columns = ["Name", "Definition", "Formula", "Source", "Sensitivity"]
+            for _, row in df_metrics.iterrows():
+                with st.expander(row["Name"]):
+                    st.markdown(f"**Definition:** {row['Definition']}")
+                    if row["Formula"] and row["Formula"] != "None":
+                        st.code(row["Formula"], language=None)
+                    c1, c2 = st.columns(2)
+                    c1.markdown(f"**Source:** {row['Source']}")
+                    c2.markdown(f"**Sensitivity:** `{row['Sensitivity']}`")
+        except Exception as e:
+            st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
+
+    with gov_tab2:
+        CHECKPOINT = "gov_fields"
+        try:
+            df_fields = _gov_con.execute("""
+                SELECT display_name, definition, source, sensitivity
+                FROM governance_definitions
+                WHERE category IN ('field', 'layer')
+                ORDER BY category DESC, definition_id
+            """).df()
+            df_fields.columns = ["Name", "Definition", "Source", "Sensitivity"]
+            st.dataframe(df_fields, use_container_width=True, hide_index=True)
+        except Exception as e:
+            st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
+
+    with gov_tab3:
+        CHECKPOINT = "gov_lineage"
+        try:
+            df_lineage = _gov_con.execute("""
+                SELECT
+                    source_name     AS "Source",
+                    source_layer    AS "From layer",
+                    target_name     AS "Target",
+                    target_layer    AS "To layer",
+                    dq_rules        AS "DQ rules",
+                    schedule        AS "Schedule",
+                    transform       AS "Transform"
+                FROM governance_lineage
+                ORDER BY lineage_id
+            """).df()
+            st.dataframe(df_lineage, use_container_width=True, hide_index=True)
+
+            st.markdown("---")
+            st.markdown("**Lineage diagram**")
+            st.code("""
+Alpha Vantage API ──▶ bronze_av ──────────────┐
+                                               ├──▶ silver_market ──▶ gold_metrics ──▶ dashboard
+FRED (FEDFUNDS)   ──▶ bronze_fred ────────────┤        DQ S1-S5        DQ G1-G5     app.py :8501
+                                               │
+FRED (GS10)       ──▶ bronze_fred_gs10 ───────┘
+            """, language=None)
+            st.caption(
+                "Each hop enforces progressively stricter quality standards. "
+                "Bronze is immutable. Silver is trusted. Gold is the only permitted dashboard source."
+            )
+        except Exception as e:
+            st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
