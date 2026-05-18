@@ -1,5 +1,5 @@
 # RUNBOOK — Market Intelligence Platform
-**Audience:** Engineers operating or onboarding to this pipeline.
+**Audience:** Engineers operating or onboarding to this platform.
 
 ---
 

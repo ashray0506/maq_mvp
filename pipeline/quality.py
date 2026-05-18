@@ -159,6 +159,7 @@ def log_dq_result(
 ) -> None:
     con = _get_connection()
     try:
+        rows_affected = int(rows_affected)
         con.execute(
             """
             INSERT INTO audit_dq_results
