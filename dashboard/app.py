@@ -675,7 +675,7 @@ with tab_market:
             Market Intelligence Platform
         </span>
         <span style="font-size:11px;color:{_P['text_sec']};">
-            Really Big Bank · Post-trade operations
+             Post-trade operations
         </span>
     </div>
     """, unsafe_allow_html=True)
