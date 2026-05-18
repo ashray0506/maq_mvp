@@ -519,17 +519,55 @@ except Exception as e:
 st.divider()
 
 # ---------------------------------------------------------------------------
-# NBA evaluation
+# NBA evaluation + compliance audit logging
 # ---------------------------------------------------------------------------
 CHECKPOINT = "nba_evaluation"
 try:
+    import json as _json
+
     triggered_rules = evaluate_nba_rules(df)
+
+    # Append user-defined active rules for display (they don't auto-trigger, just listed)
+    _con = get_connection()
+    _user_rules_df = _con.execute(
+        "SELECT rule_id, name, condition, severity FROM user_nba_rules WHERE active = TRUE"
+    ).df()
+    for _, ur in _user_rules_df.iterrows():
+        triggered_rules.append({
+            "id": ur["rule_id"],
+            "name": ur["name"],
+            "severity": "USER",
+            "action": ur["condition"],
+        })
+
     if "nba_rules" not in st.session_state:
         st.session_state["nba_rules"] = triggered_rules
     if "llm_explanation" not in st.session_state:
         st.session_state["llm_explanation"] = call_llm(triggered_rules, latest)
     if "action_log" not in st.session_state:
         st.session_state["action_log"] = []
+
+    # Story 3.4 — log evaluation to audit_nba_evaluations on every page load
+    _triggered_ids = [r["id"] for r in triggered_rules]
+    _severities = [r["severity"] for r in triggered_rules]
+    _sev_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "USER": 3}
+    _highest = min(_severities, key=lambda s: _sev_order.get(s, 9)) if _severities else "NONE"
+    _data_snapshot = latest.to_dict()
+
+    _con.execute(
+        "INSERT INTO audit_nba_evaluations VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            str(uuid.uuid4()),
+            st.session_state.get("session_id", "pre-session"),
+            _json.dumps(_triggered_ids),
+            _highest,
+            _json.dumps([{"id": r["id"], "name": r["name"], "action": r["action"]} for r in triggered_rules]),
+            st.session_state.get("llm_explanation", ""),
+            _json.dumps(_data_snapshot, default=str),
+            datetime.now(timezone.utc),
+        ],
+    )
+
 except Exception as e:
     st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
     st.stop()

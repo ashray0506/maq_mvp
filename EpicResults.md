@@ -1,0 +1,49 @@
+## Epic 1 Complete
+
+| Story | Status |
+|---|---|
+| 1.1 Scaffold | `requirements.txt`, `.env.example`, `.gitignore`, all folders |
+| 1.2 quality.py | Audit tables, NBA tables, `get_run_id`, `log_audit_run`, `log_dq_result`, `quarantine` |
+| 1.3 Bronze | `ingest.py` (AV + FEDFUNDS + GS10, B1–B4), `register_bronze.py` (3 views) |
+| 1.4 Silver | `transform_silver.py` (S1–S5, UTC join, quarantine) |
+| 1.5 Gold + Validate | `transform_gold.py` (VWAP / RSI / EMA / SMA / Sharpe / MDD / Vol), `validate.py` 12/12 PASS, 25 tests all PASS |
+
+### Gate Status
+
+- `python pipeline/validate.py` exits `0`
+- Ready to tag `v1-pipeline`
+- Ready to move to Epic 2
+
+
+## Epic 2 Complete
+
+| Story | Status |
+|---|---|
+| 2.1 Shell | `app.py` with `VALIDATION_CONFIG`, checkpoint error handling, metadata footer |
+| 2.2 SEE column | Sticky header, 4 stacked charts (Price+VWAP / Volume / RSI / EMA-SMA) with correct heights and colours |
+| 2.3 JUDGE column | RAG card, AI explanation auto-loaded via `session_state`, triggered rules, custom rule CRUD |
+| 2.4 ACT column + PDF | NBA cards with 4 action buttons, `REF-{uuid8}` audit logging, ReportLab PDF, session action log |
+| 2.5 Observability | `observability.py` — health banner, issues panel, hop cards, row flow chart, quarantine log, run history sparkline, governance expander |
+| 2.6 Market Pulse Bar | Inline equity + macro row, yield spread with colour coding and ▲/▼ trend |
+
+### Gate Status
+
+- Both apps respond with HTTP 200
+- `validate.py` still exits `0`
+- Ready to tag `v2-dashboard`
+- Ready to move to Epic 3
+
+## Epic 3 Complete
+
+| Story | Status |
+|---|---|
+| 3.1 Business KPIs | Fixed MDD formula (rolling peak with `min_periods=1`), verified all 4 KPIs in `gold_metrics`, added `test_sharpe_mdd.py` (10 benchmark tests, all pass) |
+| 3.2 NBA Rule Engine | 12 pre-configured rules (4 technical + 4 KPI + 4 macro), user CRUD in JUDGE expander, ranked `HIGH → MEDIUM → LOW → USER`, `audit_nba_evaluations` logged on every page load |
+| 3.3 LLM Rationale | Kimi `moonshot-v1-8k` with context including all KPIs + signals; `401 →` specific message; any other failure → rule-based summary; never raw error |
+| 3.4 Compliance Audit | `audit_nba_evaluations` stores triggered rule IDs, highest severity, full recommendations JSON, LLM rationale, data snapshot JSON; `audit_nba_actions` stores REF IDs; PDF disclaimer present; NBA tables visible in observability |
+
+### Gate Status
+
+- `validate.py` exits `0`
+- `35/35` tests pass
+- Ready to tag `v3-intelligence`

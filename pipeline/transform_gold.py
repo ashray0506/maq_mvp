@@ -126,9 +126,11 @@ def _compute_sharpe(close: pd.Series, macro_value: pd.Series, run_id: str) -> pd
 
 
 def _compute_mdd(close: pd.Series, window: int = MDD_WINDOW) -> pd.Series:
-    """Max Drawdown over rolling window. G4: null for first rows."""
-    rolling_max = close.rolling(window, min_periods=window).max()
-    drawdown = (close - rolling_max) / rolling_max * 100
+    """Max Drawdown over rolling window. G4: null for first rows.
+    Peak is tracked with min_periods=1 so drawdown is always defined;
+    the outer min() with min_periods=window ensures we only report after a full window."""
+    rolling_peak = close.rolling(window, min_periods=1).max()
+    drawdown = (close - rolling_peak) / rolling_peak * 100
     mdd = drawdown.rolling(window, min_periods=window).min()
     return mdd
 
@@ -196,8 +198,8 @@ def transform_gold() -> None:
         ]
         gold_df = df[gold_cols].copy()
 
-        con.execute("DROP TABLE IF EXISTS gold_metrics")
         con.execute("DROP VIEW IF EXISTS gold_metrics")
+        con.execute("DROP TABLE IF EXISTS gold_metrics")
         con.execute("DROP TABLE IF EXISTS _gold_metrics_data")
         con.execute("CREATE TABLE _gold_metrics_data AS SELECT * FROM gold_df")
         con.execute("CREATE VIEW gold_metrics AS SELECT * FROM _gold_metrics_data")
