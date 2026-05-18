@@ -47,3 +47,29 @@
 - `validate.py` exits `0`
 - `35/35` tests pass
 - Ready to tag `v3-intelligence`
+
+
+All 5 sub-fixes applied successfully — **12/12 PASS**
+
+| Fix | Change |
+|------|--------|
+| **11.1** | Title updated from `font-size:15px / weight:500` → `22px / 700` |
+| **11.2** | Added **MARKET OVERVIEW** label above equity row; added **MACRO / YIELD** label with separator before macro row |
+| **11.3** | Added **RISK ANALYTICS** section label before KPI tiles; PDF updated to match |
+| **11.4** | Updated all 3 column headers → `13px / 600` weight with bottom border divider, themed with `_P` |
+| **11.5** | `observability.py` updates: page CSS + styled title bar; `_obs_section()` helper replaces all `st.subheader`; health banner uses `✓/⚠` styled cards; issues use chip styling; hop cards now match KPI tile pattern |
+
+**Result:** All sub-fixes validated successfully (`12/12 PASS`)
+
+
+All 4 sub-fixes applied successfully
+
+| Sub-fix | Change |
+|----------|--------|
+| **12.1** | Renamed labels: `"Ticker"` → `"Index / instrument"` and `"Macro Series"` → `"Benchmark series"` |
+| **12.2** | Added `1M / 3M / 6M / Max` preset buttons wired to `session_state["selected_days"]`; added fine-tune slider with `label_visibility="collapsed"` and minimum step of `7` days |
+| **12.3** | Added compact chip CSS scoped to `div[data-testid="column"]`; styling now uses `_P` palette for full dark mode compatibility |
+| **12.4** | Added uppercase **VIEW CONTROLS** label above sidebar; renamed expander to `"Filter & period selection"` |
+
+Additional update:
+- `lookback_min` changed from `30` → `21` trading days to align with the true `1M` preset behavior.

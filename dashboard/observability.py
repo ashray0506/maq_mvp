@@ -14,7 +14,7 @@ DB_PATH = "data/market.duckdb"
 
 @st.cache_resource
 def get_connection():
-    return duckdb.connect(DB_PATH, read_only=False)
+    return duckdb.connect(DB_PATH, read_only=True)
 
 
 @st.cache_data(ttl=60)
@@ -66,7 +66,35 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("Pipeline Observability")
+st.markdown("""
+<style>
+.stApp { background: #f8f9fa; }
+.block-container { padding-top: 0 !important; padding-bottom: 0 !important; max-width: 100% !important; }
+header[data-testid="stHeader"] { display: none; }
+hr { border-color: #e8eaed !important; margin: 12px 0 !important; }
+.stCaption { font-size: 10px !important; color: #9aa0a6 !important; }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div style="background:#fff;border-bottom:1px solid #e8eaed;padding:14px 0 12px 0;
+            display:flex;align-items:center;justify-content:space-between;margin-bottom:0;">
+    <span style="font-size:22px;font-weight:700;color:#1a1a2e;letter-spacing:-0.4px;">
+        Pipeline Observability
+    </span>
+    <span style="font-size:11px;color:#9aa0a6;">
+        Really Big Bank · Post-trade operations
+    </span>
+</div>
+""", unsafe_allow_html=True)
+
+
+def _obs_section(text: str) -> None:
+    st.markdown(
+        f'<div style="font-size:10px;color:#9aa0a6;text-transform:uppercase;'
+        f'letter-spacing:.1em;padding:12px 0 8px 0;">{text}</div>',
+        unsafe_allow_html=True,
+    )
 
 # ---------------------------------------------------------------------------
 # Load data
@@ -90,12 +118,23 @@ try:
         st.stop()
 
     last_run = runs_df.iloc[0]
-    last_status = last_run.get("status", "UNKNOWN")
+    last_status = str(last_run.get("status", "UNKNOWN"))
+    last_step   = str(last_run.get("step", "—"))
+    last_time   = str(last_run.get("finished_at", "—"))[:19]
 
-    if last_status == "PASS":
-        st.success(f"HEALTHY — Last run: {last_run.get('step')} at {last_run.get('finished_at')}")
-    else:
-        st.error(f"DEGRADED — Last run: {last_run.get('step')} status={last_status} at {last_run.get('finished_at')}")
+    is_healthy = last_status == "PASS"
+    _hbg, _hbr, _hfc, _htxt = (
+        ("#f0fdf4", "#bbf7d0", "#0f9d58", "#166534") if is_healthy
+        else ("#fef2f2", "#fecaca", "#d93025", "#b91c1c")
+    )
+    _hlabel = "✓ HEALTHY" if is_healthy else "⚠ DEGRADED"
+    st.markdown(f"""
+<div style="background:{_hbg};border:1px solid {_hbr};border-radius:6px;
+            padding:10px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">
+    <span style="font-size:14px;font-weight:700;color:{_htxt};">{_hlabel}</span>
+    <span style="font-size:11px;color:{_htxt};opacity:.8;">Last run: {last_step} · {last_time}</span>
+</div>
+""", unsafe_allow_html=True)
 except Exception as e:
     st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
     st.stop()
@@ -105,18 +144,29 @@ except Exception as e:
 # ---------------------------------------------------------------------------
 CHECKPOINT = "issues_panel"
 try:
-    st.subheader("Issues")
+    _obs_section("Issues")
     if not dq_df.empty:
         issues = dq_df[dq_df["status"].isin(["FAIL", "WARN"])]
         if issues.empty:
-            st.success("No DQ issues found — all checks clean.")
+            st.markdown("""
+<div style="padding:10px 14px;border:1px solid #bbf7d0;border-radius:6px;
+            background:#f0fdf4;font-size:12px;color:#166534;">
+    ✓ No issues — all DQ rules passing
+</div>
+""", unsafe_allow_html=True)
         else:
             for _, row in issues.iterrows():
-                icon = "🔴" if row["status"] == "FAIL" else "🟡"
-                st.markdown(
-                    f"{icon} **[{row['layer'].upper()}] {row['rule_id']}** — "
-                    f"{row['detail']} ({row['rows_affected']} rows)"
-                )
+                _idot = "#ef4444" if row["status"] == "FAIL" else "#f59e0b"
+                st.markdown(f"""
+<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;
+            border:1px solid #fecaca;border-radius:6px;margin-bottom:4px;background:#fef2f2;">
+    <div style="width:8px;height:8px;border-radius:50%;background:{_idot};
+                flex-shrink:0;margin-top:3px;"></div>
+    <div style="font-size:11px;color:#1a1a2e;line-height:1.5;">
+        <strong>[{row['layer'].upper()}] {row['rule_id']}</strong> — {row['detail']} ({row['rows_affected']} rows)
+    </div>
+</div>
+""", unsafe_allow_html=True)
     else:
         st.info("No DQ results recorded yet.")
 except Exception as e:
@@ -130,29 +180,41 @@ st.divider()
 # ---------------------------------------------------------------------------
 CHECKPOINT = "hop_cards"
 try:
-    st.subheader("Pipeline Hops")
-    layers = ["bronze", "silver", "gold"]
+    _obs_section("Pipeline hops")
+    _layer_colors = {"bronze": "#b45309", "silver": "#0f9d58", "gold": "#378ADD"}
     hop_cols = st.columns(3)
 
-    for col, layer in zip(hop_cols, layers):
+    for col, layer in zip(hop_cols, ["bronze", "silver", "gold"]):
         layer_runs = runs_df[runs_df["layer"] == layer]
-        layer_dq = dq_df[dq_df["layer"] == layer]
+        layer_dq   = dq_df[dq_df["layer"] == layer]
+        _lc = _layer_colors[layer]
 
         if layer_runs.empty:
-            col.metric(layer.capitalize(), "No runs")
+            col.markdown(f"""
+<div style="background:#fff;border:1px solid #e8eaed;border-radius:6px;padding:12px 14px;">
+  <div style="font-size:9px;color:{_lc};text-transform:uppercase;letter-spacing:.05em;">{layer}</div>
+  <div style="font-size:16px;font-weight:500;color:#9aa0a6;">No runs</div>
+</div>""", unsafe_allow_html=True)
             continue
 
-        last = layer_runs.iloc[0]
-        status = last.get("status", "UNKNOWN")
-        rows_in = int(last.get("rows_in") or 0)
+        last    = layer_runs.iloc[0]
+        status  = str(last.get("status", "UNKNOWN"))
+        rows_in  = int(last.get("rows_in") or 0)
         rows_out = int(last.get("rows_out") or 0)
-        rows_q = int(last.get("rows_quarantined") or 0)
-        dq_pass = int((layer_dq["status"] == "PASS").sum())
-        dq_fail = int((layer_dq["status"] == "FAIL").sum())
+        rows_q   = int(last.get("rows_quarantined") or 0)
+        dq_pass  = int((layer_dq["status"] == "PASS").sum())
+        dq_fail  = int((layer_dq["status"] == "FAIL").sum())
 
-        colour = "normal" if status == "PASS" else "inverse"
-        col.metric(layer.capitalize(), status, f"{rows_in}→{rows_out} rows")
-        col.caption(f"DQ: {dq_pass} PASS / {dq_fail} FAIL | Quarantined: {rows_q}")
+        _sc = "#0f9d58" if status == "PASS" else "#d93025"
+        _sbg, _sbr = ("#f0fdf4", "#bbf7d0") if status == "PASS" else ("#fef2f2", "#fecaca")
+        col.markdown(f"""
+<div style="background:#fff;border:1px solid {_lc};border-radius:6px;padding:14px;">
+  <div style="font-size:10px;color:{_lc};text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">{layer}</div>
+  <div style="display:inline-block;padding:2px 8px;border-radius:10px;background:{_sbg};border:1px solid {_sbr};
+              font-size:11px;font-weight:500;color:{_sc};margin-bottom:10px;">{status}</div>
+  <div style="font-size:12px;color:#1a1a2e;margin-bottom:2px;">{rows_in:,} → {rows_out:,} rows</div>
+  <div style="font-size:11px;color:#9aa0a6;">DQ {dq_pass} PASS / {dq_fail} FAIL · quarantined {rows_q}</div>
+</div>""", unsafe_allow_html=True)
 except Exception as e:
     st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
     st.stop()
@@ -164,7 +226,7 @@ st.divider()
 # ---------------------------------------------------------------------------
 CHECKPOINT = "row_flow_chart"
 try:
-    st.subheader("Row Flow")
+    _obs_section("Row flow")
     flow_data = []
     for layer in ["bronze", "silver", "gold"]:
         layer_runs = runs_df[runs_df["layer"] == layer]
@@ -198,7 +260,7 @@ st.divider()
 # ---------------------------------------------------------------------------
 CHECKPOINT = "quarantine_log"
 try:
-    st.subheader("Quarantine Log")
+    _obs_section("Quarantine log")
     if quarantine_df.empty:
         st.success("No quarantined records — data quality clean.")
     else:
@@ -217,7 +279,7 @@ st.divider()
 # ---------------------------------------------------------------------------
 CHECKPOINT = "run_history_sparkline"
 try:
-    st.subheader("Run History (last 7)")
+    _obs_section("Run history (last 7)")
     recent = runs_df.head(7).copy()
     if not recent.empty:
         recent["status_num"] = recent["status"].apply(lambda s: 1 if s == "PASS" else 0)
@@ -248,7 +310,7 @@ st.divider()
 # ---------------------------------------------------------------------------
 CHECKPOINT = "nba_audit"
 try:
-    st.subheader("NBA Audit")
+    _obs_section("NBA audit")
     nba_eval_df = load_nba_evaluations()
     nba_act_df = load_nba_actions()
 
