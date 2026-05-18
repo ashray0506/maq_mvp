@@ -41,6 +41,49 @@ VALIDATION_CONFIG = {
     "lookback_default": 60,
 }
 
+METRIC_DEFINITIONS = {
+    "RSI-14": (
+        "Relative Strength Index (14-day, Wilder's smoothed average). "
+        "Measures momentum: >70 = overbought, <30 = oversold, 40–60 = neutral. "
+        "Standard technical indicator used across institutional platforms."
+    ),
+    "VWAP 20d": (
+        "Volume-Weighted Average Price over 20 days. "
+        "Shows where the market traded weighted by volume — the institutional fair value reference. "
+        "Price above VWAP = bullish momentum. Below = bearish."
+    ),
+    "Sharpe 20d": (
+        "Risk-adjusted return over 20 days, annualised. "
+        "Excess return above the Fed Funds rate (risk-free rate) divided by volatility. "
+        ">1 = good, 0–1 = acceptable, <0 = risk is not being compensated."
+    ),
+    "Max Drawdown 90d": (
+        "Worst peak-to-trough loss over the last 90 days. "
+        "Standard downside risk measure used in portfolio risk management. "
+        ">-10% = controlled, -10% to -20% = elevated, <-20% = critical."
+    ),
+    "Volatility 20d": (
+        "Annualised standard deviation of daily returns over 20 days. "
+        "Measures market risk level. "
+        "<12% = low, 12–20% = normal, >20% = elevated, >30% = crisis."
+    ),
+    "VWAP Efficiency": (
+        "How consistently price stays near its volume-weighted fair value. "
+        "100 = price always at VWAP. Lower = persistent deviation. "
+        ">97 = orderly market, 94–97 = normal, <94 = momentum or mean-reversion signal."
+    ),
+    "Yield Spread": (
+        "10Y Treasury yield (GS10) minus Fed Funds rate. "
+        "Positive and widening = bond market pricing future rate cuts (equities historically supportive). "
+        "Negative = yield curve inverted, historically precedes recession."
+    ),
+    "EMA vs SMA": (
+        "3-month Exponential Moving Average vs Simple Moving Average of the Fed Funds rate. "
+        "EMA responds faster to recent moves. EMA above SMA = rate accelerating. "
+        "EMA below SMA = rate decelerating. Signals macro regime shifts."
+    ),
+}
+
 DB_PATH = "data/market.duckdb"
 SYMBOL = os.getenv("SYMBOL", "SPY")
 FRED_SERIES = os.getenv("FRED_SERIES", "FEDFUNDS")
@@ -176,6 +219,14 @@ RAG_BG = {
 # ---------------------------------------------------------------------------
 # NBA helpers
 # ---------------------------------------------------------------------------
+def _safe_float(val, default: float) -> float:
+    try:
+        f = float(val)
+        return default if pd.isna(f) else f
+    except (TypeError, ValueError):
+        return default
+
+
 def evaluate_nba_rules(df: pd.DataFrame) -> list[dict]:
     if df.empty:
         return []
@@ -186,58 +237,70 @@ def evaluate_nba_rules(df: pd.DataFrame) -> list[dict]:
         if condition:
             rules.append({"id": rid, "name": name, "severity": severity, "action": action})
 
-    rsi = latest.get("rsi_14")
-    vwap = latest.get("vwap_20d")
-    close = latest.get("close")
-    sharpe = latest.get("sharpe_20d")
-    mdd = latest.get("mdd_90d")
-    vol = latest.get("volatility_20d")
-    vwap_eff = latest.get("vwap_efficiency")
-    ema = latest.get("macro_ema_3m")
-    sma = latest.get("macro_sma_3m")
-    macro = latest.get("macro_value")
-    spread = latest.get("yield_spread")
+    # Use safe_float with neutral defaults so null values never silently suppress rules
+    rsi = _safe_float(latest.get("rsi_14"), default=50.0)
+    vwap = _safe_float(latest.get("vwap_20d"), default=0.0)
+    close = _safe_float(latest.get("close"), default=0.0)
+    sharpe = _safe_float(latest.get("sharpe_20d"), default=1.0)
+    mdd = _safe_float(latest.get("mdd_90d"), default=0.0)
+    vol = _safe_float(latest.get("volatility_20d"), default=15.0)
+    vwap_eff = _safe_float(latest.get("vwap_efficiency"), default=97.0)
+    ema = _safe_float(latest.get("macro_ema_3m"), default=0.0)
+    sma = _safe_float(latest.get("macro_sma_3m"), default=0.0)
+    macro = _safe_float(latest.get("macro_value"), default=0.0)
+    spread = _safe_float(latest.get("yield_spread"), default=0.0)
+
+    # Track which values were actually present (not defaulted) for rule gating
+    has_rsi = latest.get("rsi_14") is not None and not pd.isna(latest.get("rsi_14", float("nan")))
+    has_vwap = latest.get("vwap_20d") is not None and not pd.isna(latest.get("vwap_20d", float("nan")))
+    has_sharpe = latest.get("sharpe_20d") is not None and not pd.isna(latest.get("sharpe_20d", float("nan")))
+    has_mdd = latest.get("mdd_90d") is not None and not pd.isna(latest.get("mdd_90d", float("nan")))
+    has_vol = latest.get("volatility_20d") is not None and not pd.isna(latest.get("volatility_20d", float("nan")))
+    has_ema_sma = (latest.get("macro_ema_3m") is not None and not pd.isna(latest.get("macro_ema_3m", float("nan")))
+                   and latest.get("macro_sma_3m") is not None and not pd.isna(latest.get("macro_sma_3m", float("nan"))))
+    has_spread = latest.get("yield_spread") is not None and not pd.isna(latest.get("yield_spread", float("nan")))
+    has_macro = latest.get("macro_value") is not None and not pd.isna(latest.get("macro_value", float("nan")))
 
     # Technical rules
     _rule("T1", "RSI Overbought", "HIGH",
-          rsi is not None and not pd.isna(rsi) and rsi >= VALIDATION_CONFIG["rsi_overbought"],
+          has_rsi and rsi >= VALIDATION_CONFIG["rsi_overbought"],
           "Consider reducing equity exposure — momentum extended")
     _rule("T2", "RSI Oversold", "MEDIUM",
-          rsi is not None and not pd.isna(rsi) and rsi <= VALIDATION_CONFIG["rsi_oversold"],
+          has_rsi and rsi <= VALIDATION_CONFIG["rsi_oversold"],
           "Potential entry opportunity — monitor for reversal")
     _rule("T3", "Price Below VWAP", "MEDIUM",
-          close is not None and vwap is not None and not pd.isna(close) and not pd.isna(vwap) and close < vwap,
+          has_vwap and close > 0 and close < vwap,
           "Price trading below VWAP — selling pressure present")
     _rule("T4", "VWAP Efficiency Low", "LOW",
-          vwap_eff is not None and not pd.isna(vwap_eff) and vwap_eff < VALIDATION_CONFIG["vwap_eff_signal"],
+          has_vwap and vwap_eff < VALIDATION_CONFIG["vwap_eff_signal"],
           "High deviation from VWAP — increased execution cost risk")
 
     # KPI rules
     _rule("K1", "Negative Sharpe", "HIGH",
-          sharpe is not None and not pd.isna(sharpe) and sharpe < VALIDATION_CONFIG["sharpe_amber"],
+          has_sharpe and sharpe < VALIDATION_CONFIG["sharpe_amber"],
           "Risk-adjusted returns negative — review position sizing")
     _rule("K2", "Max Drawdown Alert", "HIGH",
-          mdd is not None and not pd.isna(mdd) and mdd < VALIDATION_CONFIG["mdd_red"],
+          has_mdd and mdd < VALIDATION_CONFIG["mdd_red"],
           "Drawdown exceeds 20% — activate drawdown risk protocol")
     _rule("K3", "High Volatility", "MEDIUM",
-          vol is not None and not pd.isna(vol) and vol > VALIDATION_CONFIG["vol_red"],
+          has_vol and vol > VALIDATION_CONFIG["vol_red"],
           "Annualised volatility above 30% — reduce leverage")
     _rule("K4", "Elevated Volatility", "LOW",
-          vol is not None and not pd.isna(vol) and VALIDATION_CONFIG["vol_amber"] < vol <= VALIDATION_CONFIG["vol_red"],
+          has_vol and VALIDATION_CONFIG["vol_amber"] < vol <= VALIDATION_CONFIG["vol_red"],
           "Volatility elevated (20–30%) — monitor risk parameters")
 
     # Macro rules
     _rule("M1", "EMA Above SMA", "LOW",
-          ema is not None and sma is not None and not pd.isna(ema) and not pd.isna(sma) and ema > sma,
+          has_ema_sma and ema > sma,
           "Rate accelerating above trend — tightening macro regime")
     _rule("M2", "EMA Below SMA", "LOW",
-          ema is not None and sma is not None and not pd.isna(ema) and not pd.isna(sma) and ema < sma,
+          has_ema_sma and ema < sma,
           "Rate decelerating below trend — easing macro regime")
     _rule("M3", "Inverted Yield Curve", "HIGH",
-          spread is not None and not pd.isna(spread) and spread < VALIDATION_CONFIG["spread_red"],
+          has_spread and spread < VALIDATION_CONFIG["spread_red"],
           "Yield curve inverted — historically precedes recession, exercise caution")
     _rule("M4", "High Fed Funds Rate", "MEDIUM",
-          macro is not None and not pd.isna(macro) and macro > 4.0,
+          has_macro and macro > 4.0,
           "Fed Funds above 4% — restrictive monetary policy environment")
 
     # Sort: HIGH → MEDIUM → LOW
@@ -251,24 +314,22 @@ def call_llm(rules: list[dict], latest_row: pd.Series) -> str:
     if not KIMI_API_KEY:
         return _rule_based_summary(rules, latest_row)
 
-    rsi = latest_row.get("rsi_14")
-    close = latest_row.get("close")
-    sharpe = latest_row.get("sharpe_20d")
-    mdd = latest_row.get("mdd_90d")
-    vol = latest_row.get("volatility_20d")
-    macro = latest_row.get("macro_value")
-    spread = latest_row.get("yield_spread")
+    def _fmt(val, fmt=".2f", suffix=""):
+        try:
+            return f"{float(val):{fmt}}{suffix}" if val is not None and not pd.isna(val) else "N/A"
+        except (TypeError, ValueError):
+            return "N/A"
 
     triggered = ", ".join(r["name"] for r in rules) if rules else "none"
     context = (
         f"Symbol: {SYMBOL}\n"
-        f"Close: {close:.2f}\n"
-        f"RSI-14: {rsi:.1f}\n"
-        f"Sharpe 20d: {sharpe:.2f}\n"
-        f"Max Drawdown 90d: {mdd:.1f}%\n"
-        f"Volatility 20d: {vol:.1f}%\n"
-        f"Fed Funds Rate: {macro:.2f}%\n"
-        f"Yield Spread (GS10-FEDFUNDS): {spread:.2f}%\n"
+        f"Close: {_fmt(latest_row.get('close'))}\n"
+        f"RSI-14: {_fmt(latest_row.get('rsi_14'), '.1f')}\n"
+        f"Sharpe 20d: {_fmt(latest_row.get('sharpe_20d'))}\n"
+        f"Max Drawdown 90d: {_fmt(latest_row.get('mdd_90d'), '.1f', '%')}\n"
+        f"Volatility 20d: {_fmt(latest_row.get('volatility_20d'), '.1f', '%')}\n"
+        f"Fed Funds Rate: {_fmt(latest_row.get('macro_value'), '.2f', '%')}\n"
+        f"Yield Spread (GS10-FEDFUNDS): {_fmt(latest_row.get('yield_spread'), '.2f', '%')}\n"
         f"Triggered rules: {triggered}"
     )
 
@@ -292,9 +353,17 @@ def call_llm(rules: list[dict], latest_row: pd.Series) -> str:
             timeout=15,
         )
         if resp.status_code == 401:
-            return "LLM unavailable: API key invalid or expired. Showing rule-based summary.\n\n" + _rule_based_summary(rules, latest_row)
+            return (
+                "AI analyst offline — API key invalid or expired. "
+                "Update KIMI_API_KEY in .env to enable AI analysis.\n\n"
+                + _rule_based_summary(rules, latest_row)
+            )
+        if resp.status_code != 200:
+            return f"AI analyst offline — API error {resp.status_code}.\n\n" + _rule_based_summary(rules, latest_row)
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"].strip()
+    except req.exceptions.Timeout:
+        return "AI analyst offline — request timed out.\n\n" + _rule_based_summary(rules, latest_row)
     except Exception:
         return _rule_based_summary(rules, latest_row)
 
@@ -328,28 +397,69 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-.rag-card {
-    padding: 16px 20px;
-    border-radius: 8px;
-    margin-bottom: 12px;
-    font-weight: 600;
+/* Page background */
+.stApp { background: #f8f9fa; }
+
+/* Remove default Streamlit padding */
+.block-container { padding-top: 0 !important; padding-bottom: 0 !important; max-width: 100% !important; }
+
+/* Hide Streamlit default header */
+header[data-testid="stHeader"] { display: none; }
+
+/* Column dividers */
+[data-testid="column"] {
+    background: #ffffff;
+    padding: 20px 20px !important;
+    border-right: 1px solid #e8eaed;
 }
-.metric-pill {
-    display: inline-block;
-    padding: 4px 10px;
-    border-radius: 12px;
-    font-size: 0.85em;
-    font-weight: 600;
-    margin-right: 6px;
+[data-testid="column"]:last-child { border-right: none; }
+
+/* Metric overrides */
+[data-testid="stMetric"] {
+    background: #ffffff;
+    border: 1px solid #e8eaed;
+    border-radius: 6px;
+    padding: 10px 14px;
 }
-.sticky-header {
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    background: white;
-    padding-bottom: 8px;
-    border-bottom: 1px solid #eee;
+[data-testid="stMetricLabel"] { font-size: 10px !important; color: #9aa0a6 !important; text-transform: uppercase; letter-spacing: .05em; }
+[data-testid="stMetricValue"] { font-size: 20px !important; font-weight: 500 !important; }
+
+/* Button overrides */
+.stButton > button {
+    border: 1px solid #e8eaed !important;
+    background: #ffffff !important;
+    color: #5f6368 !important;
+    font-size: 11px !important;
+    padding: 5px 10px !important;
+    border-radius: 4px !important;
+    width: 100%;
 }
+.stButton > button:hover {
+    background: #f8f9fa !important;
+    border-color: #9aa0a6 !important;
+}
+
+/* Info boxes */
+[data-testid="stInfo"] {
+    background: #f8f9fa !important;
+    border: 1px solid #e8eaed !important;
+    border-radius: 6px !important;
+    font-size: 12px !important;
+    color: #5f6368 !important;
+}
+
+/* Expander */
+[data-testid="stExpander"] {
+    border: 1px solid #e8eaed !important;
+    border-radius: 6px !important;
+    background: #ffffff !important;
+}
+
+/* Divider */
+hr { border-color: #e8eaed !important; margin: 12px 0 !important; }
+
+/* Caption */
+.stCaption { font-size: 10px !important; color: #9aa0a6 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -393,46 +503,23 @@ except Exception as e:
     st.stop()
 
 # ---------------------------------------------------------------------------
-# Sticky header
+# Consolidated header — line 1: equity metrics | line 2: macro/yield
 # ---------------------------------------------------------------------------
-close_val = latest.get("close", float("nan"))
-vwap_val = latest.get("vwap_20d", float("nan"))
-rsi_val = latest.get("rsi_14", float("nan"))
-macro_val = latest.get("macro_value", float("nan"))
-rsi_colour, rsi_label = rsi_rag(rsi_val)
-
-st.markdown("### Market Intelligence Platform")
-
-h_col1, h_col2, h_col3, h_col4, h_col5 = st.columns([2, 2, 2, 2, 1])
-with h_col1:
-    st.metric("Close", f"${close_val:,.2f}" if not pd.isna(close_val) else "—")
-with h_col2:
-    st.metric("VWAP 20d", f"${vwap_val:,.2f}" if not pd.isna(vwap_val) else "—")
-with h_col3:
-    st.metric("RSI-14", f"{rsi_val:.1f}" if not pd.isna(rsi_val) else "—")
-with h_col4:
-    st.metric(f"{selected_macro} (%)", f"{macro_val:.2f}" if not pd.isna(macro_val) else "—")
-with h_col5:
-    colour_hex = RAG_CSS.get(rsi_colour, "#555")
-    bg_hex = RAG_BG.get(rsi_colour, "#eee")
-    st.markdown(
-        f'<div class="rag-card" style="background:{bg_hex};color:{colour_hex};text-align:center;">'
-        f'{rsi_label}</div>',
-        unsafe_allow_html=True,
-    )
-
-st.divider()
-
-# ---------------------------------------------------------------------------
-# Market Pulse Bar (Story 2.6)
-# ---------------------------------------------------------------------------
-CHECKPOINT = "market_pulse_bar"
+CHECKPOINT = "consolidated_header"
 try:
-    gs10_val = latest.get("gs10_value", float("nan"))
-    spread_val = latest.get("yield_spread", float("nan"))
+    close_val = latest.get("close", float("nan"))
+    vwap_val = latest.get("vwap_20d", float("nan"))
+    rsi_val = latest.get("rsi_14", float("nan"))
     vol_val = latest.get("volatility_20d", float("nan"))
+    macro_val = df["macro_value"].ffill().dropna().iloc[-1] if df["macro_value"].notna().any() else float("nan")
+    gs10_val = df["gs10_value"].ffill().dropna().iloc[-1] if df["gs10_value"].notna().any() else float("nan")
+    spread_val = gs10_val - macro_val if not (pd.isna(gs10_val) or pd.isna(macro_val)) else float("nan")
+    rsi_colour, rsi_label = rsi_rag(rsi_val)
 
-    # Spread trend: compare current spread vs 30d average
+    prev_close = df.iloc[-2]["close"] if len(df) >= 2 else close_val
+    day_chg = (close_val - prev_close) / prev_close * 100 if prev_close else 0
+    chg_sign = "+" if day_chg >= 0 else ""
+
     if len(df) >= 30:
         avg_spread_30d = df["yield_spread"].tail(30).mean()
         spread_trend = "▲" if (not pd.isna(spread_val) and not pd.isna(avg_spread_30d) and spread_val > avg_spread_30d) else "▼"
@@ -442,35 +529,106 @@ try:
     sc = spread_colour(spread_val)
     sc_hex = RAG_CSS.get(sc, "#555")
     sc_bg = RAG_BG.get(sc, "#eee")
+    rsi_hex = RAG_CSS.get(rsi_colour, "#555")
+    rsi_bg = RAG_BG.get(rsi_colour, "#eee")
 
-    pb_left, pb_right = st.columns(2)
-    with pb_left:
-        st.markdown("**Equity**")
-        prev_close = df.iloc[-2]["close"] if len(df) >= 2 else close_val
-        day_chg = (close_val - prev_close) / prev_close * 100 if prev_close else 0
-        chg_sign = "+" if day_chg >= 0 else ""
-        st.markdown(
-            f'<span class="metric-pill" style="background:#e8f5e9;color:#1a7a3a;">'
-            f'{selected_symbol} ${close_val:,.2f} ({chg_sign}{day_chg:.2f}%)</span>'
-            f'<span class="metric-pill" style="background:{RAG_BG.get(rsi_colour,"#eee")};color:{RAG_CSS.get(rsi_colour,"#555")};">'
-            f'RSI {rsi_val:.1f}</span>'
-            f'<span class="metric-pill" style="background:#e3f2fd;color:#0d47a1;">'
-            f'Vol {vol_val:.1f}%</span>' if not pd.isna(vol_val) else "",
-            unsafe_allow_html=True,
-        )
-    with pb_right:
-        st.markdown("**Macro / Yield**")
-        st.markdown(
-            f'<span class="metric-pill" style="background:#f3e5f5;color:#6a1b9a;">'
-            f'Fed Funds {macro_val:.2f}%</span>'
-            f'<span class="metric-pill" style="background:#e8eaf6;color:#283593;">'
-            f'GS10 {gs10_val:.2f}%</span>'
-            f'<span class="metric-pill" style="background:{sc_bg};color:{sc_hex};">'
-            f'Spread {spread_val:+.2f}% {spread_trend}</span>'
-            if not (pd.isna(macro_val) or pd.isna(gs10_val) or pd.isna(spread_val)) else
-            '<span style="color:grey;">Macro data loading…</span>',
-            unsafe_allow_html=True,
-        )
+    st.markdown("""
+<div style="background:#fff;border-bottom:1px solid #e8eaed;padding:12px 0 12px 0;
+            display:flex;align-items:center;justify-content:space-between;margin-bottom:0;">
+    <span style="font-size:15px;font-weight:500;color:#1a1a2e;letter-spacing:-0.2px;">
+        Market Intelligence Platform
+    </span>
+    <span style="font-size:11px;color:#9aa0a6;">
+        Really Big Bank · Post-trade operations
+    </span>
+</div>
+""", unsafe_allow_html=True)
+
+    # Determine RSI signal class
+    _rsi_v = rsi_val if not pd.isna(rsi_val) else None
+    if _rsi_v and _rsi_v >= VALIDATION_CONFIG["rsi_overbought"]:
+        rag_class, rag_text = "over", "Overbought — review"
+    elif _rsi_v and _rsi_v <= VALIDATION_CONFIG["rsi_oversold"]:
+        rag_class, rag_text = "under", "Oversold — opportunity"
+    elif _rsi_v and _rsi_v >= 60:
+        rag_class, rag_text = "neutral", "Approaching overbought"
+    elif _rsi_v and _rsi_v <= 40:
+        rag_class, rag_text = "neutral", "Approaching oversold"
+    else:
+        rag_class, rag_text = "neutral", "Neutral — monitor"
+
+    _rag_colors = {
+        "over":    ("fef2f2", "b91c1c", "fecaca"),
+        "under":   ("f0fdf4", "166534", "bbf7d0"),
+        "neutral": ("fef9e7", "b45309", "fde68a"),
+    }
+    _bg, _fg, _border = _rag_colors[rag_class]
+
+    rsi_display    = f"{rsi_val:.1f}" if not pd.isna(rsi_val) else "—"
+    vwap_display   = f"${vwap_val:.2f}" if not pd.isna(vwap_val) else "—"
+    macro_display  = f"{macro_val:.2f}%" if not pd.isna(macro_val) else "—"
+    gs10_display   = f"{gs10_val:.2f}%" if not pd.isna(gs10_val) else "—"
+    vol_display    = f"{vol_val:.1f}%" if not pd.isna(vol_val) else "—"
+    mdd_now        = df["mdd_90d"].dropna().iloc[-1] if df["mdd_90d"].notna().any() else None
+    mdd_display    = f"{mdd_now:.1f}%" if mdd_now is not None else "—"
+    spread_color   = "#0f9d58" if not pd.isna(spread_val) and spread_val > 0 else "#d93025"
+    spread_display = (
+        f"{'+' if spread_val > 0 else ''}{spread_val:.2f}% {spread_trend}"
+        if not pd.isna(spread_val) else "—"
+    )
+    change_color = "#0f9d58" if day_chg >= 0 else "#d93025"
+    change_arrow = "▲" if day_chg >= 0 else "▼"
+
+    meta = load_last_run_meta()
+    last_run_ts = ""
+    if meta:
+        ft = meta.get("finished_at")
+        last_run_ts = ft.strftime("%Y-%m-%d %H:%M") if hasattr(ft, "strftime") else str(ft)[:19]
+
+    st.markdown(f"""
+<div style="background:#fff;border-bottom:1px solid #e8eaed;padding:14px 0 10px 0;margin-bottom:0;">
+  <div style="display:flex;align-items:baseline;gap:24px;margin-bottom:10px;flex-wrap:wrap;">
+    <div>
+      <div style="font-size:10px;color:#9aa0a6;text-transform:uppercase;letter-spacing:.05em;">Index close</div>
+      <div style="font-size:22px;font-weight:500;color:#1a1a2e;line-height:1;">${close_val:.2f}</div>
+      <div style="font-size:11px;color:{change_color}">{change_arrow} {abs(day_chg):.2f}%</div>
+    </div>
+    <div style="width:1px;height:36px;background:#e8eaed;align-self:center;"></div>
+    <div>
+      <div style="font-size:10px;color:#9aa0a6;text-transform:uppercase;letter-spacing:.05em;">VWAP 20d</div>
+      <div style="font-size:22px;font-weight:500;color:#1a1a2e;line-height:1;">{vwap_display}</div>
+      <div style="font-size:11px;color:#9aa0a6;">fair value</div>
+    </div>
+    <div style="width:1px;height:36px;background:#e8eaed;align-self:center;"></div>
+    <div>
+      <div style="font-size:10px;color:#9aa0a6;text-transform:uppercase;letter-spacing:.05em;">RSI-14</div>
+      <div style="font-size:22px;font-weight:500;color:#1a1a2e;line-height:1;">{rsi_display}</div>
+      <div style="font-size:11px;color:#b45309;">{rag_text.lower()}</div>
+    </div>
+    <div style="width:1px;height:36px;background:#e8eaed;align-self:center;"></div>
+    <div>
+      <div style="font-size:10px;color:#9aa0a6;text-transform:uppercase;letter-spacing:.05em;">Fed funds</div>
+      <div style="font-size:22px;font-weight:500;color:#1a1a2e;line-height:1;">{macro_display}</div>
+      <div style="font-size:11px;color:#9aa0a6;">risk-free rate</div>
+    </div>
+    <div style="width:1px;height:36px;background:#e8eaed;align-self:center;"></div>
+    <div style="padding:5px 12px;border-radius:20px;font-size:12px;font-weight:500;
+                background:#{_bg};color:#{_fg};border:1px solid #{_border};align-self:center;">
+      {rag_text}
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:16px;font-size:11px;color:#5f6368;flex-wrap:wrap;">
+    <span>10Y Treasury <strong>{gs10_display}</strong></span>
+    <span>Yield spread <strong style="color:{spread_color}">{spread_display}</strong></span>
+    <span>Vol <strong>{vol_display}</strong></span>
+    <span>MDD <strong>{mdd_display}</strong></span>
+    <span style="margin-left:auto;background:#f1f3f4;padding:2px 8px;border-radius:10px;">
+      Run: {last_run_ts or '—'}
+    </span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
 except Exception as e:
     st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
     st.stop()
@@ -482,35 +640,46 @@ st.divider()
 # ---------------------------------------------------------------------------
 CHECKPOINT = "kpi_scorecard"
 try:
-    sharpe_val = latest.get("sharpe_20d", float("nan"))
-    mdd_val = latest.get("mdd_90d", float("nan"))
+    sharpe_val   = df["sharpe_20d"].dropna().iloc[-1]   if df["sharpe_20d"].notna().any()   else None
+    mdd_val      = df["mdd_90d"].dropna().iloc[-1]       if df["mdd_90d"].notna().any()       else None
+    vol_kpi      = df["volatility_20d"].dropna().iloc[-1] if df["volatility_20d"].notna().any() else None
+    vwap_eff_val = df["vwap_efficiency"].dropna().iloc[-1] if df["vwap_efficiency"].notna().any() else None
 
-    st.markdown("#### KPI Scorecard")
     k1, k2, k3, k4 = st.columns(4)
 
-    def _kpi_card(col, label, value, fmt, rag_fn):
-        colour = rag_fn(value)
-        ch = RAG_CSS.get(colour, "#555")
-        bg = RAG_BG.get(colour, "#eee")
-        display = fmt.format(value) if not pd.isna(value) else "—"
-        col.markdown(
-            f'<div class="rag-card" style="background:{bg};color:{ch};">'
-            f'<div style="font-size:0.8em;font-weight:400;">{label}</div>'
-            f'<div style="font-size:1.4em;">{display}</div></div>',
-            unsafe_allow_html=True,
-        )
+    _tile_colors = {"good": "#0f9d58", "warn": "#b45309", "bad": "#d93025", "na": "#9aa0a6"}
 
-    _kpi_card(k1, "Sharpe 20d", sharpe_val, "{:.2f}", sharpe_rag)
-    _kpi_card(k2, "Max Drawdown 90d", mdd_val, "{:.1f}%", mdd_rag)
-    _kpi_card(k3, "Volatility 20d", vol_val, "{:.1f}%", vol_rag)
-    vwap_eff_val = latest.get("vwap_efficiency", float("nan"))
+    def kpi_tile(col, label, value, color, sublabel):
+        col.markdown(f"""
+<div style="background:#fff;border:1px solid #e8eaed;border-radius:6px;
+            padding:10px 14px;height:72px;">
+  <div style="font-size:10px;color:#9aa0a6;text-transform:uppercase;
+              letter-spacing:.05em;margin-bottom:4px;">{label}</div>
+  <div style="font-size:18px;font-weight:500;color:{_tile_colors[color]};
+              line-height:1;">{value}</div>
+  <div style="font-size:10px;color:#9aa0a6;margin-top:3px;">{sublabel}</div>
+</div>
+""", unsafe_allow_html=True)
 
-    def _vwap_eff_rag(v):
-        if v is None or pd.isna(v):
-            return "grey"
-        return "green" if v >= VALIDATION_CONFIG["vwap_eff_signal"] else "amber"
+    kpi_tile(k1, "Sharpe 20d",
+             f"{sharpe_val:.2f}" if sharpe_val is not None else "—",
+             "good" if sharpe_val and sharpe_val > 1 else "warn" if sharpe_val and sharpe_val >= 0 else "bad" if sharpe_val is not None else "na",
+             "risk-adjusted return" if sharpe_val is not None else "warmup period")
 
-    _kpi_card(k4, "VWAP Efficiency", vwap_eff_val, "{:.1f}", _vwap_eff_rag)
+    kpi_tile(k2, "Max drawdown 90d",
+             f"{mdd_val:.1f}%" if mdd_val is not None else "—",
+             "good" if mdd_val and mdd_val > -10 else "warn" if mdd_val and mdd_val > -20 else "bad" if mdd_val is not None else "na",
+             "controlled" if mdd_val and mdd_val > -10 else "elevated" if mdd_val is not None else "warmup period")
+
+    kpi_tile(k3, "Volatility 20d",
+             f"{vol_kpi:.1f}%" if vol_kpi is not None else "—",
+             "good" if vol_kpi and vol_kpi < 12 else "warn" if vol_kpi and vol_kpi < 20 else "bad" if vol_kpi is not None else "na",
+             "low regime" if vol_kpi and vol_kpi < 12 else "elevated" if vol_kpi and vol_kpi >= 20 else "normal")
+
+    kpi_tile(k4, "VWAP efficiency",
+             f"{vwap_eff_val:.1f}" if vwap_eff_val is not None else "—",
+             "good" if vwap_eff_val and vwap_eff_val > 97 else "warn" if vwap_eff_val and vwap_eff_val > 94 else "bad" if vwap_eff_val is not None else "na",
+             "orderly" if vwap_eff_val and vwap_eff_val > 97 else "deviation signal" if vwap_eff_val and vwap_eff_val <= 94 else "normal")
 
 except Exception as e:
     st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
@@ -579,49 +748,73 @@ see_col, judge_col, act_col = st.columns([2, 1.5, 1.5])
 
 # ============================= SEE =============================
 with see_col:
-    st.markdown("#### See")
+    st.markdown("##### Market conditions")
     CHECKPOINT = "see_charts"
     try:
         import plotly.graph_objects as go
 
+        CHART_COLORS = {
+            "close":    "#1a1a2e",
+            "vwap":     "#EF9F27",
+            "rsi":      "#7c3aed",
+            "ema":      "#378ADD",
+            "sma":      "#EF9F27",
+            "vol_up":   "#0f9d58",
+            "vol_down": "#d93025",
+            "grid":     "#f1f3f4",
+            "zero":     "#e8eaed",
+        }
+
+        _chart_layout = dict(
+            plot_bgcolor="#ffffff",
+            paper_bgcolor="#ffffff",
+            font=dict(family="system-ui, -apple-system, sans-serif", size=11, color="#5f6368"),
+            margin=dict(t=32, b=24, l=8, r=8),
+            legend=dict(orientation="h", y=-0.25, font=dict(size=10)),
+            xaxis=dict(gridcolor="#f1f3f4", linecolor="#e8eaed", tickfont=dict(size=10)),
+            yaxis=dict(gridcolor="#f1f3f4", linecolor="#e8eaed", tickfont=dict(size=10)),
+        )
+
         # Chart 1 — Price + VWAP (220px)
         fig1 = go.Figure()
         fig1.add_trace(go.Scatter(x=df["date"], y=df["close"], name="Close",
-                                   line=dict(color="#1f77b4", width=1.5)))
+                                   line=dict(color=CHART_COLORS["close"], width=1.5)))
         fig1.add_trace(go.Scatter(x=df["date"], y=df["vwap_20d"], name="VWAP 20d",
-                                   line=dict(color="#ff7f0e", width=1.5, dash="dot")))
-        fig1.update_layout(height=220, margin=dict(l=0, r=0, t=20, b=0),
-                           legend=dict(orientation="h", y=1.1), showlegend=True)
+                                   line=dict(color=CHART_COLORS["vwap"], width=1.5, dash="dot")))
+        fig1.update_layout(height=220, **_chart_layout)
         st.plotly_chart(fig1, use_container_width=True)
 
         # Chart 2 — Volume bars green/red (150px)
-        colours = ["#2ca02c" if c >= o else "#d62728"
+        colours = [CHART_COLORS["vol_up"] if c >= o else CHART_COLORS["vol_down"]
                    for c, o in zip(df["close"], df["close"].shift(1).fillna(df["close"]))]
         fig2 = go.Figure()
         fig2.add_trace(go.Bar(x=df["date"], y=df["volume"], marker_color=colours, name="Volume"))
-        fig2.update_layout(height=150, margin=dict(l=0, r=0, t=10, b=0), showlegend=False)
+        fig2.update_layout(height=150, showlegend=False, **{k: v for k, v in _chart_layout.items() if k != "legend"})
         st.plotly_chart(fig2, use_container_width=True)
 
         # Chart 3 — RSI y-axis 0–100 (180px)
         fig3 = go.Figure()
         fig3.add_trace(go.Scatter(x=df["date"], y=df["rsi_14"], name="RSI-14",
-                                   line=dict(color="#9467bd", width=1.5)))
-        fig3.add_hline(y=VALIDATION_CONFIG["rsi_overbought"], line_dash="dash", line_color="red", line_width=1)
-        fig3.add_hline(y=VALIDATION_CONFIG["rsi_oversold"], line_dash="dash", line_color="green", line_width=1)
-        fig3.update_yaxes(range=[0, 100])
-        fig3.update_layout(height=180, margin=dict(l=0, r=0, t=10, b=0), showlegend=False)
+                                   line=dict(color=CHART_COLORS["rsi"], width=1.5)))
+        fig3.add_hline(y=VALIDATION_CONFIG["rsi_overbought"], line_dash="dash",
+                       line_color="#ef4444", line_width=0.8,
+                       annotation_text="70", annotation_font_size=9)
+        fig3.add_hline(y=VALIDATION_CONFIG["rsi_oversold"], line_dash="dash",
+                       line_color="#10b981", line_width=0.8,
+                       annotation_text="30", annotation_font_size=9)
+        fig3.update_yaxes(range=[0, 100], tickvals=[0, 30, 70, 100])
+        fig3.update_layout(height=180, showlegend=False, **{k: v for k, v in _chart_layout.items() if k != "legend"})
         st.plotly_chart(fig3, use_container_width=True)
 
         # Chart 4 — EMA vs SMA (180px)
         fig4 = go.Figure()
         fig4.add_trace(go.Scatter(x=df["date"], y=df["macro_ema_3m"], name="EMA 3m",
-                                   line=dict(color="#1f77b4", width=2)))
+                                   line=dict(color=CHART_COLORS["ema"], width=2)))
         fig4.add_trace(go.Scatter(x=df["date"], y=df["macro_sma_3m"], name="SMA 3m",
-                                   line=dict(color="#ff7f0e", width=2, dash="dash")))
-        fig4.update_layout(height=180, margin=dict(l=0, r=0, t=10, b=0),
-                           legend=dict(orientation="h", y=1.1))
+                                   line=dict(color=CHART_COLORS["sma"], width=2, dash="dash")))
+        fig4.update_layout(height=180, **_chart_layout)
         st.plotly_chart(fig4, use_container_width=True)
-        st.caption("Blue solid = EMA (accelerating rate). Orange dashed = SMA (lagging rate). "
+        st.caption("Blue solid = EMA (accelerating rate). Amber dashed = SMA (lagging rate). "
                    "EMA above SMA signals tightening macro regime.")
 
     except Exception as e:
@@ -630,20 +823,27 @@ with see_col:
 
 # ============================= JUDGE =============================
 with judge_col:
-    st.markdown("#### Judge")
+    st.markdown("##### Signal analysis")
     CHECKPOINT = "judge_rag"
     try:
         # RAG card
-        rc = rsi_colour
-        rc_hex = RAG_CSS.get(rc, "#555")
-        rc_bg = RAG_BG.get(rc, "#eee")
-        rsi_display = f"{rsi_val:.1f}" if not pd.isna(rsi_val) else "—"
-        st.markdown(
-            f'<div class="rag-card" style="background:{rc_bg};color:{rc_hex};'
-            f'font-size:1.3em;text-align:center;padding:24px;">'
-            f'RSI {rsi_display}<br><span style="font-size:0.7em;">{rsi_label}</span></div>',
-            unsafe_allow_html=True,
-        )
+        _rag_styles = {
+            "over":    {"bg": "#fef2f2", "border": "#fecaca", "val_color": "#b91c1c"},
+            "under":   {"bg": "#f0fdf4", "border": "#bbf7d0", "val_color": "#166534"},
+            "neutral": {"bg": "#fef9e7", "border": "#fde68a", "val_color": "#b45309"},
+        }
+        _s = _rag_styles[rag_class]
+        st.markdown(f"""
+<div style="background:{_s['bg']};border:1px solid {_s['border']};border-radius:8px;
+            padding:16px;text-align:center;margin-bottom:14px;">
+  <div style="font-size:24px;font-weight:500;color:{_s['val_color']};">
+    RSI {rsi_display}
+  </div>
+  <div style="font-size:11px;color:{_s['val_color']};opacity:.85;margin-top:4px;">
+    {rag_text}
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
         # AI explanation (auto-loaded on open)
         st.markdown("**AI Analysis**")
@@ -655,15 +855,31 @@ with judge_col:
             st.session_state["llm_explanation"] = call_llm(triggered_rules, latest)
             st.rerun()
 
-        # Triggered rules
-        st.markdown("**Triggered Rules**")
+        # Triggered rules — styled chips
+        st.markdown("<div style='font-size:11px;color:#9aa0a6;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;'>Triggered signals</div>", unsafe_allow_html=True)
+        _rule_dot_colors = {"HIGH": "#ef4444", "MEDIUM": "#f59e0b", "LOW": "#10b981", "USER": "#378add"}
         if triggered_rules:
             for rule in triggered_rules:
-                sev = rule["severity"]
-                icon = {"HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🔵"}.get(sev, "⚪")
-                st.markdown(f"{icon} **{rule['name']}** ({sev})")
+                dot = _rule_dot_colors.get(rule["severity"], "#9aa0a6")
+                st.markdown(f"""
+<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;
+            border:1px solid #e8eaed;border-radius:6px;margin-bottom:5px;background:#fff;">
+  <div style="width:8px;height:8px;border-radius:50%;background:{dot};
+              flex-shrink:0;margin-top:3px;"></div>
+  <div>
+    <div style="font-size:11px;font-weight:500;color:#1a1a2e;">{rule['name']}</div>
+    <div style="font-size:10px;color:#9aa0a6;">{rule['severity']} · {rule['action'][:60]}{'…' if len(rule['action'])>60 else ''}</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
         else:
-            st.success("No rules triggered.")
+            st.markdown("""
+<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;
+            border:1px solid #e8eaed;border-radius:6px;background:#fff;">
+  <div style="width:8px;height:8px;border-radius:50%;background:#10b981;flex-shrink:0;"></div>
+  <div style="font-size:11px;color:#166534;font-weight:500;">All signals within normal range</div>
+</div>
+""", unsafe_allow_html=True)
 
         # Custom rule manager
         with st.expander("Custom Rule Manager"):
@@ -698,53 +914,61 @@ with judge_col:
 
 # ============================= ACT =============================
 with act_col:
-    st.markdown("#### Act")
+    st.markdown("##### Recommended actions")
     CHECKPOINT = "act_nba"
     try:
         con = get_connection()
         session_id = st.session_state.get("session_id") or str(uuid.uuid4())
         st.session_state["session_id"] = session_id
 
-        ACTION_TYPES = [
-            "Send to Trader",
-            "Send for Analysis",
-            "Add to Report",
-            "Flag for Review",
-        ]
         sev_icons = {"HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🔵", "USER": "🔵"}
+
+        def handle_action(action_type: str, rule_id: str) -> str:
+            ref_id = f"REF-{str(uuid.uuid4())[:8].upper()}"
+            con.execute(
+                "INSERT INTO audit_nba_actions VALUES (?, ?, ?, ?, ?, ?)",
+                [str(uuid.uuid4()), ref_id, session_id, action_type, rule_id,
+                 datetime.now(timezone.utc)],
+            )
+            rule_name = next((r["name"] for r in triggered_rules if r["id"] == rule_id), rule_id)
+            log_entry = {
+                "ref_id": ref_id, "action": action_type,
+                "rule": rule_name, "at": datetime.now(timezone.utc).strftime("%H:%M:%S"),
+            }
+            st.session_state["action_log"].insert(0, log_entry)
+            st.session_state["action_log"] = st.session_state["action_log"][:10]
+            return ref_id
 
         if triggered_rules:
             for rule in triggered_rules:
-                icon = sev_icons.get(rule["severity"], "⚪")
-                with st.container():
-                    st.markdown(f"**{icon} {rule['name']}**")
-                    st.caption(rule["action"])
-                    action_cols = st.columns(2)
-                    for i, action_type in enumerate(ACTION_TYPES):
-                        btn_col = action_cols[i % 2]
-                        btn_key = f"btn_{rule['id']}_{action_type.replace(' ','_')}"
-                        if btn_col.button(action_type, key=btn_key):
-                            ref_id = f"REF-{str(uuid.uuid4())[:8].upper()}"
-                            con.execute(
-                                "INSERT INTO audit_nba_actions VALUES (?, ?, ?, ?, ?, ?)",
-                                [
-                                    str(uuid.uuid4()), ref_id, session_id,
-                                    action_type, rule["id"],
-                                    datetime.now(timezone.utc),
-                                ],
-                            )
-                            log_entry = {
-                                "ref_id": ref_id,
-                                "action": action_type,
-                                "rule": rule["name"],
-                                "at": datetime.now(timezone.utc).strftime("%H:%M:%S"),
-                            }
-                            st.session_state["action_log"].insert(0, log_entry)
-                            st.session_state["action_log"] = st.session_state["action_log"][:10]
-                            st.success(f"Logged {ref_id}")
-                st.markdown("---")
+                st.markdown(f"""
+<div style="border:1px solid #e8eaed;border-radius:6px;padding:10px 12px;margin-bottom:8px;background:#fff;">
+  <div style="font-size:12px;font-weight:500;color:#1a1a2e;margin-bottom:2px;">{rule['name']}</div>
+  <div style="font-size:10px;color:#9aa0a6;margin-bottom:6px;">{rule['severity']} · {rule['action'][:70]}{'…' if len(rule['action'])>70 else ''}</div>
+</div>
+""", unsafe_allow_html=True)
+                b1, b2 = st.columns(2)
+                with b1:
+                    if st.button("📨 Back office", key=f"bo_{rule['id']}"):
+                        ref = handle_action("back_office", rule["id"])
+                        st.success(f"Logged · {ref}")
+                    if st.button("💬 Slack alert", key=f"sl_{rule['id']}"):
+                        ref = handle_action("slack_alert", rule["id"])
+                        st.success(f"Logged · {ref}")
+                with b2:
+                    if st.button("👁 For review", key=f"rv_{rule['id']}"):
+                        ref = handle_action("review", rule["id"])
+                        st.success(f"Logged · {ref}")
+                    if st.button("📋 Add to report", key=f"rp_{rule['id']}"):
+                        ref = handle_action("report", rule["id"])
+                        st.success(f"Logged · {ref}")
         else:
-            st.info("No actions required.")
+            st.markdown("""
+<div style="padding:12px;border:1px solid #e8eaed;border-radius:6px;
+            background:#f0fdf4;text-align:center;font-size:12px;color:#166534;">
+  No actions required
+</div>
+""", unsafe_allow_html=True)
 
         # PDF export
         if st.button("Export PDF Report"):
@@ -852,20 +1076,25 @@ with act_col:
         st.stop()
 
 # ---------------------------------------------------------------------------
-# Metadata footer
+# Footer
 # ---------------------------------------------------------------------------
-st.divider()
-CHECKPOINT = "metadata_footer"
+CHECKPOINT = "footer"
 try:
-    meta = load_last_run_meta()
-    if meta:
-        ft = meta.get("finished_at")
-        ft_str = ft.strftime("%Y-%m-%d %H:%M UTC") if hasattr(ft, "strftime") else str(ft)
-        st.caption(
-            f"Last pipeline run: **{meta.get('step')}** | "
-            f"Status: **{meta.get('status')}** | "
-            f"Rows: **{meta.get('rows_out')}** | "
-            f"Finished: {ft_str}"
-        )
+    _meta = load_last_run_meta()
+    _rows    = _meta.get("rows_out", "—") if _meta else "—"
+    _status  = _meta.get("status", "—")   if _meta else "—"
+    _ft      = _meta.get("finished_at")   if _meta else None
+    _last_ts = _ft.strftime("%Y-%m-%d %H:%M") if hasattr(_ft, "strftime") else str(_ft)[:19] if _ft else "—"
+    _dq_color = "#0f9d58" if _status == "PASS" else "#d93025"
+
+    st.markdown(f"""
+<div style="background:#fff;border-top:1px solid #e8eaed;padding:8px 0;margin-top:16px;
+            display:flex;align-items:center;gap:20px;font-size:10px;color:#9aa0a6;flex-wrap:wrap;">
+  <span>Last run: {_last_ts} UTC</span>
+  <span>Rows in gold: {_rows}</span>
+  <span style="color:{_dq_color};font-weight:500;">Status: {_status}</span>
+  <span style="margin-left:auto;">Data: Alpha Vantage · FRED</span>
+</div>
+""", unsafe_allow_html=True)
 except Exception as e:
-    st.caption(f"Metadata unavailable: {e}")
+    st.caption(f"Footer unavailable: {e}")

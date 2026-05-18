@@ -164,6 +164,10 @@ def transform_gold() -> None:
         rows_in = len(df)
         logger.info("silver_market: %d rows loaded", rows_in)
 
+        # Forward-fill monthly macro columns so every daily row has a value for Sharpe/EMA/SMA
+        df["macro_value"] = df["macro_value"].ffill()
+        df["gs10_value"] = df["gs10_value"].ffill()
+
         # Compute technical metrics
         df["vwap_20d"] = _compute_vwap(df, run_id)
         df["rsi_14"] = _compute_rsi(df["close"])

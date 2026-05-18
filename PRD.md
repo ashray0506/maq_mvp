@@ -1,5 +1,5 @@
 # PRD — Market Intelligence Platform
-**Version:** 2.0 | **Owner:** Analytics Engineering Lead | **Status:** Active
+**Version:** 1.0 | **Owner:** Analytics Engineering Lead | **Status:** Active
 
 ---
 
@@ -9,7 +9,7 @@ Post-trade operations management needs external market benchmarks to contextuali
 
 ## Platform Goal
 
-Local-first, production-patterned platform that ingests → transforms → presents → recommends. Three words: **See. Judge. Act.**
+Local-first, production-patterned platform that ingests → transforms → presents → recommends. Use Framework: **See. Judge. Act.**
 
 ---
 
