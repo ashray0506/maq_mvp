@@ -469,3 +469,104 @@ Final operational hardening sprint focused on:
 | LLM fallback handling | PASS |
 | PDF generation | PASS |
 | Pipeline orchestration | PASS |
+
+
+# Epic 8 — Final Layout Alignment & KPI Context Refinements
+
+## Overview
+
+Epic 8 finalized the dashboard structure and interaction model to fully match the approved wireframe layout.
+
+This sprint focused on:
+
+- KPI filtering correctness
+- SEE/JUDGE/ACT structural alignment
+- Contextual risk analytics placement
+- Compact control flows
+- Final dashboard hierarchy consistency
+
+All updates validated successfully.
+
+---
+
+## Sub-Fixes Completed — `12/12 PASS`
+
+| Fix | Improvement |
+|---|---|
+| 8.1 | Added `safe_float(row, col, default)` helper — fully NaN-proof and KeyError-proof KPI access |
+| 8.2 | All 5 KPI tiles now source values from `safe_float(latest, col)` using the actively filtered dataframe tied to selected symbol + lookback |
+| 8.3 | Moved all 4 charts directly into the SEE column above the divider |
+| 8.4 | Relocated Risk Analytics section directly below chart divider with contextual subtitle |
+| 8.5 | Removed obsolete full-width `Market detail` section |
+| 8.6 | Updated column ratio layout to `[1.3, 1.2, 1.0]` |
+| 8.7 | Preserved compact single-line RAG bar behavior from Fix 18.2 |
+| 8.8 | Moved filter controls to a full-width control bar above all three dashboard columns |
+| 8.9 | Added contextual subtitle: `"contextualises market conditions against performance benchmarks"` |
+| 8.10 | Final SEE/JUDGE/ACT structure aligned exactly to approved wireframe |
+| 8.11 | Header metric ordering standardized across market + macro rows |
+| 8.12 | Final layout spacing, dividers, and footer hierarchy validated across all sections |
+
+---
+
+## Final Dashboard Structure
+
+```text
+TOPBAR
+title | print | dark toggle
+
+HEADER
+Close · VWAP · RSI · Fed Funds | 10Y · Spread · Vol · MDD
+
+LLM PULSE
+amber tile
+
+VIEW CONTROLS (full width)
+Index ▾ | Macro ▾ | 1M 3M 6M YTD Max [slider]
+
+SEE →
+Charts
+(Price+VWAP,
+Volume,
+RSI,
+EMA/SMA)
+
+─ divider ─
+
+Risk Analytics
+(Sharpe
+MDD
+Vol
+VWAP Eff
+Spread)
+
+JUDGE →
+RSI signal bar
+AI interpretation
+
+─ divider ─
+
+Signals
+Ask (collapsed)
+My alerts (collapsed)
+
+ACT →
+Severity summary
+NBA cards
+Action buttons
+PDF + log
+
+────────────────────────────────────────────
+
+FOOTER
+```
+
+---
+
+## Epic 8 Result
+
+- Structure matches approved wireframe exactly
+- KPI tiles correctly synchronized to active filters
+- SEE / JUDGE / ACT hierarchy finalized
+- Risk Analytics repositioned for contextual flow
+- Full dashboard layout validated successfully
+- `12/12 PASS`

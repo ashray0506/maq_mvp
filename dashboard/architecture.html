@@ -1,151 +1,47 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Strategic Data Architecture</title>
-
 <style>
-  body{
-    margin:0;
-    padding:20px;
-    font-family:system-ui,-apple-system,sans-serif;
-    background:#f8f9fa;
-  }
-
-  h2{
-    font-size:15px;
-    font-weight:500;
-    color:#1a1a2e;
-    margin:0 0 4px 0;
-  }
-
-  p{
-    font-size:12px;
-    color:#5f6368;
-    margin:0 0 16px 0;
-  }
-
-  svg{
-    max-width:100%;
-    height:auto;
-  }
-
-  svg text{
-    font-family:system-ui,-apple-system,sans-serif;
-  }
-
-  .node{
-    cursor:pointer;
-  }
-
-  .node:hover rect,
-  .node:hover circle{
-    opacity:0.85;
-  }
-
-  .panel{
-    border:1px solid #e8eaed;
-    border-radius:8px;
-    padding:12px 16px;
-    background:#fff;
-    margin-top:12px;
-    font-size:12px;
-    color:#5f6368;
-    display:none;
-    line-height:1.7;
-  }
-
-  .panel strong{
-    color:#1a1a2e;
-    font-weight:600;
-  }
-
-  .tag{
-    display:inline-block;
-    font-size:10px;
-    padding:2px 7px;
-    border-radius:10px;
-    font-weight:600;
-    margin-right:4px;
-  }
-
-  .mvp{
-    background:#EAF3DE;
-    color:#27500A;
-  }
-
-  .prod{
-    background:#E6F1FB;
-    color:#0C447C;
-  }
-
-  .tags{
-    margin:6px 0 8px;
-  }
-
-  .row{
-    margin-top:4px;
-  }
-
-  .lbl{
-    font-weight:600;
-    font-size:11px;
-  }
-
-  .lbl.g{
-    color:#27500A;
-  }
-
-  .lbl.b{
-    color:#0C447C;
-  }
+  body{margin:0;padding:20px;font-family:system-ui,-apple-system,sans-serif;background:#f8f9fa}
+  h2{font-size:15px;font-weight:500;color:#1a1a2e;margin:0 0 4px 0}
+  p{font-size:12px;color:#5f6368;margin:0 0 16px 0}
+  svg text{font-family:system-ui,-apple-system,sans-serif}
+  .node{cursor:pointer}
+  .node:hover rect,.node:hover circle{opacity:0.8}
+  .panel{border:1px solid #e8eaed;border-radius:8px;padding:12px 16px;background:#fff;margin-top:12px;font-size:12px;color:#5f6368;display:none;line-height:1.7}
+  .panel strong{color:#1a1a2e;font-weight:500}
+  .tag{display:inline-block;font-size:10px;padding:2px 7px;border-radius:10px;font-weight:500;margin-right:4px}
+  .mvp{background:#EAF3DE;color:#27500A}
+  .prod{background:#E6F1FB;color:#0C447C}
+  .tags{margin:6px 0 8px}
+  .row{margin-top:4px}
+  .lbl{font-weight:500;font-size:11px}
+  .lbl.g{color:#27500A}
+  .lbl.b{color:#0C447C}
 </style>
 </head>
-
 <body>
-
 <h2>Strategic data architecture</h2>
-<p>
-  One strategic view. Tool annotations show MVP vs production path.
-  Click any box for detail.
-</p>
+<p>One strategic view. Tool annotations show MVP vs production path. Click any box for detail.</p>
 
-<svg viewBox="0 0 680 310" role="img" aria-labelledby="title desc">
-
-<title id="title">Strategic data architecture</title>
-
-<desc id="desc">
-Five-stage pipeline: Sources, Ingestion, Data Platform
-(Bronze-Silver-Gold), Governance, Consumers.
-</desc>
-
+<svg width="100%" viewBox="0 0 680 310" role="img">
+<title>Strategic data architecture</title>
+<desc>Five-stage pipeline: Sources, Ingestion, Data Platform (Bronze-Silver-Gold), Governance, Consumers. MVP tools in green annotations, production tools in gray.</desc>
 <defs>
-  <marker
-    id="arr"
-    viewBox="0 0 10 10"
-    refX="8"
-    refY="5"
-    markerWidth="5"
-    markerHeight="5"
-    orient="auto-start-reverse">
-
-    <path
-      d="M2 1L8 5L2 9"
-      fill="none"
-      stroke="#378ADD"
-      stroke-width="1.5"
-      stroke-linecap="round"
-      stroke-linejoin="round" />
+  <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
   </marker>
 </defs>
 
-<!-- Stage Labels -->
-<text x="44" y="16" text-anchor="middle" font-size="10" fill="#9aa0a6" font-weight="700">SOURCES</text>
-<text x="153" y="16" text-anchor="middle" font-size="10" fill="#9aa0a6" font-weight="700">INGESTION</text>
-<text x="340" y="16" text-anchor="middle" font-size="10" fill="#9aa0a6" font-weight="700">DATA PLATFORM</text>
-<text x="525" y="16" text-anchor="middle" font-size="10" fill="#9aa0a6" font-weight="700">GOVERNANCE</text>
-<text x="634" y="16" text-anchor="middle" font-size="10" fill="#9aa0a6" font-weight="700">CONSUMERS</text>
+<!-- Stage labels -->
+<text x="44" y="16" text-anchor="middle" font-size="10" fill="#9aa0a6" font-weight="600">SOURCES</text>
+<text x="153" y="16" text-anchor="middle" font-size="10" fill="#9aa0a6" font-weight="600">INGESTION</text>
+<text x="340" y="16" text-anchor="middle" font-size="10" fill="#9aa0a6" font-weight="600">DATA PLATFORM</text>
+<text x="525" y="16" text-anchor="middle" font-size="10" fill="#9aa0a6" font-weight="600">GOVERNANCE</text>
+<text x="634" y="16" text-anchor="middle" font-size="10" fill="#9aa0a6" font-weight="600">CONSUMERS</text>
 
 <!-- Dividers -->
 <line x1="88" y1="20" x2="88" y2="270" stroke="#e8eaed" stroke-width="0.5"/>
@@ -154,259 +50,140 @@ Five-stage pipeline: Sources, Ingestion, Data Platform
 <line x1="598" y1="20" x2="598" y2="270" stroke="#e8eaed" stroke-width="0.5"/>
 
 <!-- SOURCES -->
-<g id="src" class="node" tabindex="0" role="button" onclick="show('src')">
-  <rect x="6" y="28" width="76" height="44" rx="5"
-        fill="#E6F1FB" stroke="#B5D4F4" stroke-width="1"/>
-  <text x="44" y="45" text-anchor="middle" font-size="11"
-        fill="#0C447C" font-weight="600">Alpha Vantage</text>
-  <text x="44" y="60" text-anchor="middle" font-size="9"
-        fill="#185FA5">SPY · OHLCV</text>
+<g id="src" class="node" onclick="show('src')">
+  <rect x="6" y="28" width="76" height="44" rx="5" fill="#E6F1FB" stroke="#B5D4F4" stroke-width="1"/>
+  <text x="44" y="45" text-anchor="middle" font-size="11" fill="#0C447C" font-weight="600">Alpha Vantage</text>
+  <text x="44" y="60" text-anchor="middle" font-size="9" fill="#185FA5">SPY · OHLCV</text>
 </g>
-
-<g id="src2" class="node" tabindex="0" role="button" onclick="show('src2')">
-  <rect x="6" y="82" width="76" height="44" rx="5"
-        fill="#E6F1FB" stroke="#B5D4F4" stroke-width="1"/>
-  <text x="44" y="99" text-anchor="middle" font-size="11"
-        fill="#0C447C" font-weight="600">FRED API</text>
-  <text x="44" y="114" text-anchor="middle" font-size="9"
-        fill="#185FA5">FEDFUNDS · GS10</text>
+<g id="src2" class="node" onclick="show('src2')">
+  <rect x="6" y="82" width="76" height="44" rx="5" fill="#E6F1FB" stroke="#B5D4F4" stroke-width="1"/>
+  <text x="44" y="99" text-anchor="middle" font-size="11" fill="#0C447C" font-weight="600">FRED API</text>
+  <text x="44" y="114" text-anchor="middle" font-size="9" fill="#185FA5">FEDFUNDS · GS10</text>
 </g>
 
 <!-- INGESTION -->
-<g id="ing" class="node" tabindex="0" role="button" onclick="show('ing')">
-  <rect x="98" y="28" width="110" height="98" rx="5"
-        fill="#F1EFE8" stroke="#D3D1C7" stroke-width="1.5"/>
-  <text x="153" y="62" text-anchor="middle" font-size="12"
-        fill="#444441" font-weight="700">Ingestion</text>
-  <text x="153" y="78" text-anchor="middle" font-size="9"
-        fill="#5F5E5A">Scheduled · retry · DQ</text>
+<g id="ing" class="node" onclick="show('ing')">
+  <rect x="98" y="28" width="110" height="98" rx="5" fill="#F1EFE8" stroke="#D3D1C7" stroke-width="1.5"/>
+  <text x="153" y="62" text-anchor="middle" font-size="12" fill="#444441" font-weight="600">Ingestion</text>
+  <text x="153" y="78" text-anchor="middle" font-size="9" fill="#5F5E5A">Scheduled · retry · DQ</text>
 </g>
-
-<text x="104" y="102" font-size="9" fill="#27500A" font-weight="700">
-  MVP: Python · schedule
-</text>
-
-<text x="104" y="116" font-size="9" fill="#888780">
-  Prod: Fivetran · Airflow
-</text>
+<text x="104" y="102" font-size="9" fill="#27500A" font-weight="600">MVP: Python · schedule</text>
+<text x="104" y="116" font-size="9" fill="#888780">Prod: Fivetran · Airflow</text>
 
 <!-- BRONZE -->
-<g id="bronze" class="node" tabindex="0" role="button" onclick="show('bronze')">
-  <rect x="228" y="28" width="74" height="98" rx="5"
-        fill="#FAEEDA" stroke="#EF9F27" stroke-width="1.5"/>
-  <text x="265" y="57" text-anchor="middle" font-size="11"
-        fill="#633806" font-weight="700">Bronze</text>
-  <text x="265" y="73" text-anchor="middle" font-size="9"
-        fill="#854F0B">Raw · immutable</text>
+<g id="bronze" class="node" onclick="show('bronze')">
+  <rect x="228" y="28" width="74" height="98" rx="5" fill="#FAEEDA" stroke="#EF9F27" stroke-width="1.5"/>
+  <text x="265" y="57" text-anchor="middle" font-size="11" fill="#633806" font-weight="700">Bronze</text>
+  <text x="265" y="73" text-anchor="middle" font-size="9" fill="#854F0B">Raw · immutable</text>
 </g>
+<text x="230" y="102" font-size="9" fill="#27500A" font-weight="600">MVP: Parquet local</text>
+<text x="230" y="116" font-size="9" fill="#888780">Prod: S3 versioned</text>
 
 <!-- SILVER -->
-<g id="silver" class="node" tabindex="0" role="button" onclick="show('silver')">
-  <rect x="312" y="28" width="74" height="98" rx="5"
-        fill="#F1EFE8" stroke="#B4B2A9" stroke-width="1.5"/>
-  <text x="349" y="57" text-anchor="middle" font-size="11"
-        fill="#444441" font-weight="700">Silver</text>
-  <text x="349" y="73" text-anchor="middle" font-size="9"
-        fill="#5F5E5A">Cleaned · joined</text>
+<g id="silver" class="node" onclick="show('silver')">
+  <rect x="312" y="28" width="74" height="98" rx="5" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="1.5"/>
+  <text x="349" y="57" text-anchor="middle" font-size="11" fill="#444441" font-weight="700">Silver</text>
+  <text x="349" y="73" text-anchor="middle" font-size="9" fill="#5F5E5A">Cleaned · joined</text>
 </g>
+<text x="314" y="102" font-size="9" fill="#27500A" font-weight="600">MVP: DuckDB views</text>
+<text x="314" y="116" font-size="9" fill="#888780">Prod: S3 Iceberg · dbt</text>
 
 <!-- GOLD -->
-<g id="gold" class="node" tabindex="0" role="button" onclick="show('gold')">
-  <rect x="396" y="28" width="56" height="98" rx="5"
-        fill="#FAEEDA" stroke="#BA7517" stroke-width="1.5"/>
-  <text x="424" y="57" text-anchor="middle" font-size="11"
-        fill="#412402" font-weight="700">Gold</text>
-  <text x="424" y="73" text-anchor="middle" font-size="9"
-        fill="#633806">Metrics · KPIs</text>
+<g id="gold" class="node" onclick="show('gold')">
+  <rect x="396" y="28" width="56" height="98" rx="5" fill="#FAEEDA" stroke="#BA7517" stroke-width="1.5"/>
+  <text x="424" y="57" text-anchor="middle" font-size="11" fill="#412402" font-weight="700">Gold</text>
+  <text x="424" y="73" text-anchor="middle" font-size="9" fill="#633806">Metrics · KPIs</text>
 </g>
+<text x="398" y="102" font-size="9" fill="#27500A" font-weight="600">MVP: DuckDB</text>
+<text x="398" y="116" font-size="9" fill="#888780">Prod: Snowflake</text>
 
 <!-- GOVERNANCE -->
-<g id="gov" class="node" tabindex="0" role="button" onclick="show('gov')">
-  <rect x="472" y="28" width="116" height="98" rx="5"
-        fill="#F1EFE8"
-        stroke="#d93025"
-        stroke-width="1"
-        stroke-dasharray="5 2"/>
-  <text x="530" y="57" text-anchor="middle" font-size="12"
-        fill="#444441" font-weight="700">Governance</text>
-  <text x="530" y="73" text-anchor="middle" font-size="9"
-        fill="#5F5E5A">DQ · lineage · catalogue</text>
+<g id="gov" class="node" onclick="show('gov')">
+  <rect x="472" y="28" width="116" height="98" rx="5" fill="#F1EFE8" stroke="#d93025" stroke-width="1" stroke-dasharray="5 2"/>
+  <text x="530" y="57" text-anchor="middle" font-size="12" fill="#444441" font-weight="600">Governance</text>
+  <text x="530" y="73" text-anchor="middle" font-size="9" fill="#5F5E5A">DQ · lineage · catalogue</text>
 </g>
+<text x="478" y="102" font-size="9" fill="#27500A" font-weight="600">MVP: DuckDB tables</text>
+<text x="478" y="116" font-size="9" fill="#888780">Prod: Alation · OpenLineage</text>
 
 <!-- CONSUMERS -->
-<g id="con" class="node" tabindex="0" role="button" onclick="show('con')">
-  <rect x="606" y="28" width="68" height="98" rx="5"
-        fill="#EAF3DE" stroke="#C0DD97" stroke-width="1.5"/>
-  <text x="640" y="57" text-anchor="middle" font-size="11"
-        fill="#27500A" font-weight="700">Dashboard</text>
-  <text x="640" y="72" text-anchor="middle" font-size="9"
-        fill="#3B6D11">See · Judge · Act</text>
-  <text x="640" y="85" text-anchor="middle" font-size="9"
-        fill="#3B6D11">What-if · NBA</text>
+<g id="con" class="node" onclick="show('con')">
+  <rect x="606" y="28" width="68" height="98" rx="5" fill="#EAF3DE" stroke="#C0DD97" stroke-width="1.5"/>
+  <text x="640" y="57" text-anchor="middle" font-size="11" fill="#27500A" font-weight="700">Dashboard</text>
+  <text x="640" y="72" text-anchor="middle" font-size="9" fill="#3B6D11">See · Judge · Act</text>
+  <text x="640" y="85" text-anchor="middle" font-size="9" fill="#3B6D11">What-if · NBA</text>
 </g>
+<text x="608" y="102" font-size="9" fill="#27500A" font-weight="600">MVP: Streamlit ✓</text>
+<text x="608" y="116" font-size="9" fill="#888780">Prod: Looker / custom</text>
 
-<!-- Flow -->
-<line x1="82" y1="50" x2="96" y2="64"
-      stroke="#378ADD" stroke-width="1.5"
-      marker-end="url(#arr)"/>
+<!-- BATCH ARROWS -->
+<line x1="82" y1="50" x2="96" y2="64" stroke="#378ADD" stroke-width="1.5" marker-end="url(#arr)"/>
+<line x1="82" y1="104" x2="96" y2="96" stroke="#378ADD" stroke-width="1.5" marker-end="url(#arr)"/>
+<line x1="208" y1="77" x2="226" y2="77" stroke="#378ADD" stroke-width="1.5" marker-end="url(#arr)"/>
+<line x1="302" y1="77" x2="310" y2="77" stroke="#378ADD" stroke-width="1.5" marker-end="url(#arr)"/>
+<line x1="386" y1="77" x2="394" y2="77" stroke="#378ADD" stroke-width="1.5" marker-end="url(#arr)"/>
+<line x1="452" y1="77" x2="470" y2="77" stroke="#378ADD" stroke-width="1.5" marker-end="url(#arr)"/>
+<line x1="588" y1="77" x2="604" y2="77" stroke="#378ADD" stroke-width="1.5" marker-end="url(#arr)"/>
 
-<line x1="82" y1="104" x2="96" y2="96"
-      stroke="#378ADD" stroke-width="1.5"
-      marker-end="url(#arr)"/>
+<!-- GOVERNANCE dashed loop -->
+<line x1="349" y1="126" x2="349" y2="148" stroke="#d93025" stroke-width="0.8" stroke-dasharray="3 2"/>
+<line x1="349" y1="148" x2="530" y2="148" stroke="#d93025" stroke-width="0.8" stroke-dasharray="3 2"/>
+<line x1="530" y1="148" x2="530" y2="128" stroke="#d93025" stroke-width="0.8" stroke-dasharray="3 2" marker-end="url(#arr)"/>
 
-<line x1="208" y1="77" x2="226" y2="77"
-      stroke="#378ADD" stroke-width="1.5"
-      marker-end="url(#arr)"/>
+<!-- FUTURE STATE lane -->
+<rect x="6" y="164" width="668" height="54" rx="5" fill="none" stroke="#7c3aed" stroke-width="0.8" stroke-dasharray="5 3"/>
+<text x="18" y="180" font-size="10" fill="#534AB7" font-weight="600">Future state — real-time lane</text>
+<text x="18" y="196" font-size="9" fill="#7F77DD">Event sources (IoT · feeds · market tick)</text>
+<text x="18" y="210" font-size="9" fill="#888780">Kafka / Kinesis  →  Flink / Lambda  →  online serving  →  real-time dashboard layer</text>
+<line x1="190" y1="200" x2="220" y2="200" stroke="#7c3aed" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#arr)"/>
+<line x1="380" y1="200" x2="410" y2="200" stroke="#7c3aed" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#arr)"/>
+<line x1="530" y1="200" x2="580" y2="200" stroke="#7c3aed" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#arr)"/>
 
-<line x1="302" y1="77" x2="310" y2="77"
-      stroke="#378ADD" stroke-width="1.5"
-      marker-end="url(#arr)"/>
-
-<line x1="386" y1="77" x2="394" y2="77"
-      stroke="#378ADD" stroke-width="1.5"
-      marker-end="url(#arr)"/>
-
-<line x1="452" y1="77" x2="470" y2="77"
-      stroke="#378ADD" stroke-width="1.5"
-      marker-end="url(#arr)"/>
-
-<line x1="588" y1="77" x2="604" y2="77"
-      stroke="#378ADD" stroke-width="1.5"
-      marker-end="url(#arr)"/>
-
+<!-- LEGEND -->
+<line x1="6" y1="242" x2="26" y2="242" stroke="#378ADD" stroke-width="2"/>
+<text x="30" y="246" font-size="9" fill="#5f6368">Batch / MVP path</text>
+<line x1="120" y1="242" x2="140" y2="242" stroke="#7c3aed" stroke-width="1" stroke-dasharray="4 2"/>
+<text x="144" y="246" font-size="9" fill="#5f6368">Real-time (future)</text>
+<line x1="240" y1="242" x2="260" y2="242" stroke="#d93025" stroke-width="0.8" stroke-dasharray="3 2"/>
+<text x="264" y="246" font-size="9" fill="#5f6368">Governance</text>
+<rect x="334" y="237" width="9" height="9" rx="2" fill="#EAF3DE" stroke="#C0DD97" stroke-width="0.5"/>
+<text x="347" y="246" font-size="9" fill="#5f6368">MVP built</text>
+<rect x="394" y="237" width="9" height="9" rx="2" fill="#F1EFE8" stroke="#D3D1C7" stroke-width="0.5"/>
+<text x="407" y="246" font-size="9" fill="#5f6368">Production path</text>
 </svg>
 
 <div id="panel" class="panel"></div>
 
 <script>
 const D = {
-
-  src:{
-    t:'Alpha Vantage',
-    tags:['MVP ✓'],
-    mvp:'TIME_SERIES_DAILY for SPY.',
-    prod:'Premium or Bloomberg.'
-  },
-
-  src2:{
-    t:'FRED API',
-    tags:['MVP ✓'],
-    mvp:'FEDFUNDS and GS10.',
-    prod:'Add SOFR and CPI.'
-  },
-
-  ing:{
-    t:'Ingestion layer',
-    tags:['MVP ✓'],
-    mvp:'Python ingest pipeline.',
-    prod:'Airflow + Fivetran.'
-  },
-
-  bronze:{
-    t:'Bronze layer',
-    tags:['MVP ✓'],
-    mvp:'Immutable parquet.',
-    prod:'S3 versioned lake.'
-  },
-
-  silver:{
-    t:'Silver layer',
-    tags:['MVP ✓'],
-    mvp:'DuckDB cleaned views.',
-    prod:'Iceberg + dbt.'
-  },
-
-  gold:{
-    t:'Gold layer',
-    tags:['MVP ✓'],
-    mvp:'KPI metrics layer.',
-    prod:'Snowflake marts.'
-  },
-
-  gov:{
-    t:'Governance',
-    tags:['MVP ✓'],
-    mvp:'DQ and lineage tables.',
-    prod:'Alation + OpenLineage.'
-  },
-
-  con:{
-    t:'Dashboard',
-    tags:['MVP ✓'],
-    mvp:'Streamlit dashboard.',
-    prod:'Looker or Tableau.'
-  }
+  src:{t:'Alpha Vantage',tags:['MVP ✓'],mvp:'TIME_SERIES_DAILY for SPY. Free tier, 100 days. Retry 3x, rate limit detection via JSON Note key, schema validation. FEDFUNDS/252 used as daily risk-free rate for Sharpe.',prod:'Premium tier for full history. Switch symbol to AXJO for ASX 200. Or Refinitiv / Bloomberg.'},
+  src2:{t:'FRED API',tags:['MVP ✓'],mvp:'FEDFUNDS (monthly rate) and GS10 (10Y Treasury). Free, unlimited. Monthly series forward-filled to daily for silver join.',prod:'Add SOFR for daily risk-free rate. Add CPI, VIX as additional macro series. Same ingest pattern.'},
+  ing:{t:'Ingestion layer',tags:['MVP ✓'],mvp:'Python ingest.py with retry 3x / 5s backoff, rate limit detection, schema validation, DQ rules B1-B4. schedule library for daily 07:00 run.',prod:'Fivetran for SaaS / database connectors. Airflow DAG wrapping same Python functions — no refactoring needed.'},
+  bronze:{t:'Bronze layer',tags:['MVP ✓'],mvp:'Local data/bronze/ parquet files. One per source per run, date-named. Immutable — never edited after write. DuckDB views registered over parquet.',prod:'AWS S3 with versioning. Same parquet format — DuckDB reads S3 natively. No format change needed.'},
+  silver:{t:'Silver layer',tags:['MVP ✓'],mvp:'DuckDB views. Cleaned, joined on DATE_TRUNC(month), UTC-normalised. FRED forward-filled to daily. DQ rules S1-S5. Quarantine table for failed records.',prod:'S3 Iceberg tables. dbt models with tests. Same dimensional model — date, symbol, macro_value, loaded_at.'},
+  gold:{t:'Gold layer',tags:['MVP ✓'],mvp:'DuckDB views. VWAP 20d, RSI-14 (Wilder EMA), EMA/SMA 3m, Sharpe, MDD, Volatility, VWAP Efficiency, Yield Spread. Only permitted dashboard source.',prod:'Snowflake materialised views. dbt models. Same SQL logic — portable.'},
+  gov:{t:'Governance',tags:['MVP pattern ✓'],mvp:'governance_definitions + governance_lineage tables in DuckDB. 14 DQ rules across B/S/G layers. audit_pipeline_runs, audit_dq_results, quarantine_records.',prod:'Alation or Collibra for data catalogue. OpenLineage standard (auto-captured from dbt). Great Expectations for DQ rules.'},
+  con:{t:'Dashboard — Market Analytics',tags:['MVP ✓'],mvp:'Streamlit app.py (port 8501) + observability.py (port 8502). See→Judge→Act. What-if simulator. Governance tab. Dark mode. Print. NBA engine.',prod:'Streamlit Cloud or Docker + nginx. Or Looker / Tableau connecting to Snowflake gold views for enterprise BI.'}
 };
 
-function resetNodes(){
-  document
-    .querySelectorAll('.node rect')
-    .forEach(r => r.style.opacity = '1');
-}
-
 function show(id){
-
-  const d = D[id];
-
-  if(!d) return;
-
-  resetNodes();
-
-  const tags = (d.tags || [])
-    .map(t => `<span class="tag mvp">${t}</span>`)
-    .join('');
-
-  document.getElementById('panel').style.display = 'block';
-
-  document.getElementById('panel').innerHTML =
-    `<strong>${d.t}</strong>
-     <div class="tags">${tags}</div>
-     <div class="row">
-       <span class="lbl g">MVP:</span> ${d.mvp}
-     </div>
-     <div class="row">
-       <span class="lbl b">Production:</span> ${d.prod}
-     </div>`;
-
-  document
-    .querySelectorAll('.node rect')
-    .forEach(r => r.style.opacity = '0.35');
-
-  const el = document.getElementById(id);
-
-  if(el){
-    el.querySelectorAll('rect')
-      .forEach(r => r.style.opacity = '1');
-  }
+  const d=D[id];if(!d)return;
+  const tags=(d.tags||[]).map(t=>`<span class="tag mvp">${t}</span>`).join('');
+  document.getElementById('panel').style.display='block';
+  document.getElementById('panel').innerHTML=
+    `<strong>${d.t}</strong><div class="tags">${tags}</div>`+
+    `<div class="row"><span class="lbl g">MVP: </span>${d.mvp}</div>`+
+    `<div class="row" style="margin-top:4px"><span class="lbl b">Production: </span>${d.prod}</div>`;
+  document.querySelectorAll('rect[rx]').forEach(r=>r.style.opacity='0.5');
+  const el=document.getElementById(id);
+  if(el)el.querySelectorAll('rect').forEach(r=>r.style.opacity='1');
 }
-
-document.querySelector('svg')
-  .addEventListener('click', function(e){
-
-    const tag = e.target.tagName.toLowerCase();
-
-    if(tag === 'svg' || tag === 'line'){
-
-      resetNodes();
-
-      document.getElementById('panel').style.display = 'none';
-    }
-});
-
-document.querySelectorAll('.node')
-  .forEach(node => {
-
-    node.addEventListener('keypress', function(e){
-
-      if(e.key === 'Enter' || e.key === ' '){
-
-        e.preventDefault();
-
-        show(this.id);
-      }
-    });
+document.querySelector('svg').addEventListener('click',function(e){
+  if(e.target.tagName==='svg'||e.target.tagName==='line'||e.target.tagName==='text'){
+    document.querySelectorAll('rect[rx]').forEach(r=>r.style.opacity='1');
+    document.getElementById('panel').style.display='none';
+  }
 });
 </script>
-
 </body>
 </html>

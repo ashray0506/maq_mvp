@@ -267,15 +267,6 @@ RAG_BG = {
 # ---------------------------------------------------------------------------
 # NBA helpers
 # ---------------------------------------------------------------------------
-def safe_float(row, col: str, default: float = 0.0) -> float:
-    """Safe float from a Series row by column name."""
-    try:
-        v = float(row[col])
-        return default if (v != v) else v  # NaN check
-    except (TypeError, ValueError, KeyError):
-        return default
-
-
 def _safe_float(val, default: float) -> float:
     try:
         f = float(val)
@@ -540,13 +531,13 @@ def _kimi_post(messages: list[dict], max_tokens: int = 400) -> tuple[str | None,
 
 
 MARKET_PULSE_PROMPT = (
-    "You are a senior equity trader. "
-    "Write ONE sentence — maximum 25 words — about current market conditions. "
-    "Use trader voice: direct, specific, no hedging. "
-    "Reference at least two of: price level, RSI, yield spread, VWAP. "
-    "Do NOT use: 'indicating', 'suggesting', 'appears', 'seems'. "
-    "Example tone: 'SPY at $739 with RSI 68 — momentum stretched above VWAP. "
-    "Yield spread positive at +0.68% provides macro support. Watch 70.'"
+    "You are a senior equity trader at an institutional desk. "
+    "Given the following market snapshot, write ONE sentence in trader voice "
+    "that synthesises the key signals. Be direct and specific. "
+    "Use trader language — state what IS happening, not what data 'suggests'. "
+    "Include at least: price action, RSI momentum, and one macro reference. "
+    "Never use the words 'indicating', 'suggesting', or 'appears'. "
+    "Maximum 28 words."
 )
 
 
@@ -554,46 +545,20 @@ def get_market_pulse(context: str) -> str:
     """LLM-generated one-line market summary. Cached per session."""
     if "market_pulse" in st.session_state:
         return st.session_state["market_pulse"]
-
-    result = None
-    if KIMI_API_KEY:
+    if not KIMI_API_KEY:
+        result = None
+    else:
         result, _ = _kimi_post([
             {"role": "system", "content": MARKET_PULSE_PROMPT},
             {"role": "user", "content": context},
         ], max_tokens=60)
-
-    _is_fallback = (
-        not result
-        or "offline" in result.lower()
-        or "unavailable" in result.lower()
-        or "api key" in result.lower()
-        or len(result) < 10
-    )
-
-    if _is_fallback:
+    if not result:
         try:
-            _close  = float(context.split("Close: $")[1].split("\n")[0])
-            _rsi    = float(context.split("RSI-14: ")[1].split("\n")[0].strip().split()[0])
-            _raw_sp = context.split("Yield Spread")[1].split("%")[0].strip().replace("+", "")
-            _spread = float(_raw_sp.split()[-1])
-            _momentum = (
-                "momentum extended" if _rsi > 65 else
-                "momentum building" if _rsi > 55 else
-                "momentum fading" if _rsi < 40 else "momentum neutral"
-            )
-            _macro = (
-                "macro supportive" if _spread > 0.3 else
-                "macro compressing" if _spread > 0 else
-                "yield curve inverted — caution"
-            )
-            result = (
-                f"SPY at ${_close:.0f} — {_momentum} with RSI {_rsi:.0f}. "
-                f"Yield spread {'+' if _spread >= 0 else ''}{_spread:.2f}% — {_macro}."
-                f"{' Watch the 70 line.' if _rsi > 65 else ''}"
-            ).strip()
+            _close = context.split("Close: $")[1].split("\n")[0].strip()
+            _rsi   = context.split("RSI-14: ")[1].split("\n")[0].strip()
+            result = f"SPY at ${_close} with RSI {_rsi} — monitor momentum for threshold breach."
         except Exception:
-            result = "Market data loaded. Review RSI and yield spread in the signals panel."
-
+            result = "Market pulse unavailable — check API key."
     st.session_state["market_pulse"] = result
     return result
 
@@ -670,13 +635,10 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
-# Dark / Light mode state — light is default
+# Dark / Light mode state
 # ---------------------------------------------------------------------------
-_params = st.query_params
-if "dark" in _params:
-    st.session_state["dark_mode"] = _params["dark"] == "1"
-elif "dark_mode" not in st.session_state:
-    st.session_state["dark_mode"] = False  # light is default
+if "dark_mode" not in st.session_state:
+    st.session_state["dark_mode"] = True
 
 _dark = st.session_state["dark_mode"]
 
@@ -1070,6 +1032,11 @@ with tab_market:
           <div style="font-size:22px;font-weight:500;color:{_P['text_pri']};line-height:1;">{macro_display}</div>
           <div style="font-size:11px;color:{_P['text_sec']};">risk-free rate</div>
         </div>
+        <div style="width:1px;height:36px;background:{_P['border']};align-self:center;"></div>
+        <div style="display:inline-block;padding:6px 16px;border-radius:4px;font-size:12px;
+                    font-weight:500;background:{_bg_solid};color:{_fg_solid};align-self:center;">
+          {rag_text}
+        </div>
       </div>
 
       <div style="display:flex;align-items:center;gap:16px;font-size:11px;color:{_P['text_body']};
@@ -1094,30 +1061,19 @@ with tab_market:
         st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
         st.stop()
 
-    # Fix 21.2 — Amber pulse tile
+    # PRD Change 1 — Market Pulse Statement (best-effort, independent block)
     CHECKPOINT = "market_pulse"
     try:
         _pulse_context = _build_market_context(latest, [])
         _pulse = get_market_pulse(_pulse_context)
-
-        # Theme-aware amber colours
-        _pbg    = "#412402" if _dark else "#FAEEDA"
-        _pbdr   = "#BA7517" if _dark else "#EF9F27"
-        _ptxt   = "#FAC775" if _dark else "#633806"
-        _plbl   = "#EF9F27" if _dark else "#854F0B"
-
-        _pulse_col, _pulse_btn_col = st.columns([8, 1])
+        _pulse_col, _pulse_btn_col = st.columns([10, 1])
         with _pulse_col:
             st.markdown(f"""
-<div style="background:{_pbg};border:1px solid {_pbdr};border-radius:6px;
-            padding:10px 16px;display:flex;align-items:center;
-            justify-content:space-between;gap:16px;margin-top:4px;">
-  <span style="font-size:13px;color:{_ptxt};font-style:italic;line-height:1.5;flex:1;">
-    {_pulse}
-  </span>
-  <span style="font-size:10px;color:{_plbl};white-space:nowrap;flex-shrink:0;">
-    AI · auto-generated
-  </span>
+<div style="font-size:12px;color:{_P['text_sec']};font-style:italic;
+            padding:6px 12px;background:{_P['hover_bg']};border-radius:4px;
+            border-left:2px solid {_P['border']};margin-top:4px;line-height:1.5;">
+  {_pulse}
+  <span style="font-size:10px;color:{_P['text_sec']};margin-left:8px;font-style:normal;opacity:.7;">AI · auto-generated</span>
 </div>
 """, unsafe_allow_html=True)
         with _pulse_btn_col:
@@ -1126,6 +1082,63 @@ with tab_market:
                 st.rerun()
     except Exception:
         pass
+
+    st.divider()
+
+    # ---------------------------------------------------------------------------
+    # Risk Analytics
+    # ---------------------------------------------------------------------------
+    CHECKPOINT = "kpi_scorecard"
+    try:
+        sharpe_val   = df["sharpe_20d"].dropna().iloc[-1]   if df["sharpe_20d"].notna().any()   else None
+        mdd_val      = df["mdd_90d"].dropna().iloc[-1]       if df["mdd_90d"].notna().any()       else None
+        vol_kpi      = df["volatility_20d"].dropna().iloc[-1] if df["volatility_20d"].notna().any() else None
+        vwap_eff_val = df["vwap_efficiency"].dropna().iloc[-1] if df["vwap_efficiency"].notna().any() else None
+
+        st.markdown(f"""
+<div style="font-size:10px;color:{_P['text_sec']};text-transform:uppercase;
+            letter-spacing:.1em;padding:8px 0 6px 0;">Risk analytics</div>
+""", unsafe_allow_html=True)
+
+        k1, k2, k3, k4 = st.columns(4)
+
+        _tile_colors = {"good": "#0f9d58", "warn": "#b45309", "bad": "#d93025", "na": "#9aa0a6"}
+
+        def kpi_tile(col, label, value, color, sublabel):
+            col.markdown(f"""
+<div style="border:1px solid {_P['border']};border-radius:6px;
+            padding:8px 12px;background:{_P['card_bg']};">
+  <div style="font-size:9px;color:{_P['text_sec']};text-transform:uppercase;
+              letter-spacing:.06em;">{label}</div>
+  <div style="font-size:18px;font-weight:500;color:{_tile_colors[color]};
+              line-height:1.2;">{value}</div>
+  <div style="font-size:10px;color:{_P['text_sec']};">{sublabel}</div>
+</div>
+""", unsafe_allow_html=True)
+
+        kpi_tile(k1, "Sharpe 20d",
+                 f"{sharpe_val:.2f}" if sharpe_val is not None else "—",
+                 "good" if sharpe_val and sharpe_val > 1 else "warn" if sharpe_val and sharpe_val >= 0 else "bad" if sharpe_val is not None else "na",
+                 "risk-adjusted return" if sharpe_val is not None else "warmup period")
+
+        kpi_tile(k2, "Max drawdown 90d",
+                 f"{mdd_val:.1f}%" if mdd_val is not None else "—",
+                 "good" if mdd_val and mdd_val > -10 else "warn" if mdd_val and mdd_val > -20 else "bad" if mdd_val is not None else "na",
+                 "controlled" if mdd_val and mdd_val > -10 else "elevated" if mdd_val is not None else "warmup period")
+
+        kpi_tile(k3, "Volatility 20d",
+                 f"{vol_kpi:.1f}%" if vol_kpi is not None else "—",
+                 "good" if vol_kpi and vol_kpi < 12 else "warn" if vol_kpi and vol_kpi < 20 else "bad" if vol_kpi is not None else "na",
+                 "low regime" if vol_kpi and vol_kpi < 12 else "elevated" if vol_kpi and vol_kpi >= 20 else "normal")
+
+        kpi_tile(k4, "VWAP efficiency",
+                 f"{vwap_eff_val:.1f}" if vwap_eff_val is not None else "—",
+                 "good" if vwap_eff_val and vwap_eff_val > 97 else "warn" if vwap_eff_val and vwap_eff_val > 94 else "bad" if vwap_eff_val is not None else "na",
+                 "orderly" if vwap_eff_val and vwap_eff_val > 97 else "deviation signal" if vwap_eff_val and vwap_eff_val <= 94 else "normal")
+
+    except Exception as e:
+        st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
+        st.stop()
 
     st.divider()
 
@@ -1183,7 +1196,10 @@ with tab_market:
         st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
         st.stop()
 
-    # Filter bar — full width above three columns
+    # ---------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------
+    # Persistent filter bar (Fix 14.1) — between Risk Analytics and 3 columns
+    # ---------------------------------------------------------------------------
     CHECKPOINT = "filter_bar"
     try:
         st.markdown(f"""
@@ -1197,21 +1213,22 @@ with tab_market:
             _sel_sym = st.selectbox("Index", symbols, index=0, key="filter_symbol")
         with _fb2:
             _sel_mac = st.selectbox("Macro series", macro_series_list, index=0, key="filter_macro",
-                help="FEDFUNDS = Federal Funds Rate. GS10 = 10Y Treasury yield.")
+                help="Controls which FRED macro series appears in the EMA vs SMA chart. "
+                     "FEDFUNDS = Federal Funds Rate. GS10 = 10Y Treasury yield.")
         with _fb3:
-            _fp1, _fp2, _fp3, _fp4, _fp5, _fp6 = st.columns([0.4,0.4,0.4,0.4,0.4,3])
-            _fpresets = {"1M": 21, "3M": 63, "6M": 126, "YTD": 252, "Max": _max_days}
-            for _fpi, (_fplbl, _fpdays) in enumerate(_fpresets.items()):
-                [_fp1, _fp2, _fp3, _fp4, _fp5][_fpi].button(
-                    _fplbl, key=f"period_{_fplbl}", use_container_width=True,
-                    on_click=lambda d=_fpdays: st.session_state.update(
-                        {"selected_days": min(d, _max_days)}))
-            lookback = _fp6.slider("Days", min_value=21, max_value=_max_days,
+            _pp1, _pp2, _pp3, _pp4, _pp5, _pp6 = st.columns([0.4, 0.4, 0.4, 0.4, 0.4, 3])
+            _presets = {"1M": 21, "3M": 63, "6M": 126, "YTD": 252, "Max": _max_days}
+            for _pi, (_plbl, _pdays) in enumerate(_presets.items()):
+                _pcol = [_pp1, _pp2, _pp3, _pp4, _pp5][_pi]
+                if _pcol.button(_plbl, key=f"period_{_plbl}", use_container_width=True):
+                    st.session_state["selected_days"] = min(_pdays, _max_days)
+            lookback = _pp6.slider("Days", min_value=21, max_value=_max_days,
                                    value=st.session_state["selected_days"], step=7,
                                    label_visibility="collapsed")
             st.session_state["selected_days"] = lookback
         st.markdown("</div>", unsafe_allow_html=True)
 
+        # Fix 16.3 — reload when filter changes, use tail semantics
         selected_symbol = _sel_sym
         selected_macro  = _sel_mac
         if _sel_sym != st.session_state.get("_last_sym") or lookback != st.session_state.get("_last_lkb"):
@@ -1222,6 +1239,7 @@ with tab_market:
         if not df.empty:
             latest = df.iloc[-1]
 
+        # Fix 16.7 — print-only filter summary
         st.markdown(f"""
 <div class="print-only" style="font-size:11px;color:#5f6368;padding:6px 0;
     border-bottom:1px solid #e8eaed;margin-bottom:12px;">
@@ -1233,125 +1251,74 @@ with tab_market:
         st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
         st.stop()
 
-    # Three columns: SEE / JUDGE / ACT
-
     # ---------------------------------------------------------------------------
     # Three columns: SEE / JUDGE / ACT
     # ---------------------------------------------------------------------------
-    see_col, judge_col, act_col = st.columns([1.3, 1.2, 1.0])
+    see_col, judge_col, act_col = st.columns([2, 1.5, 1.5])
 
     # ============================= SEE =============================
     with see_col:
         st.markdown(f'<div style="font-size:13px;font-weight:600;color:{_P["text_pri"]};padding-bottom:10px;border-bottom:1px solid {_P["border"]};margin-bottom:14px;">Market conditions<span style="color:{_P["text_sec"]};font-weight:400;"> →</span></div>', unsafe_allow_html=True)
-        CHECKPOINT = "see_column"
+        CHECKPOINT = "see_charts"
         try:
-            import plotly.graph_objects as _sgo
+            import plotly.graph_objects as go
 
             CHART_COLORS = {
-                "close": "#1a1a2e" if not _dark else "#e8eaed",
-                "vwap": "#EF9F27", "rsi": "#7c3aed",
-                "ema": "#378ADD", "sma": "#EF9F27",
-                "vol_up": "#0f9d58", "vol_down": "#d93025",
+                "close":    "#1a1a2e",
+                "vwap":     "#EF9F27",
+                "rsi":      "#7c3aed",
+                "ema":      "#378ADD",
+                "sma":      "#EF9F27",
+                "vol_up":   "#0f9d58",
+                "vol_down": "#d93025",
+                "grid":     "#f1f3f4",
+                "zero":     "#e8eaed",
             }
 
-            # Chart 1 — Price + VWAP
-            _sc1 = _sgo.Figure()
-            _sc1.add_trace(_sgo.Scatter(x=df["date"], y=df["close"], name="Close",
-                line=dict(color=CHART_COLORS["close"], width=1.5)))
-            _sc1.add_trace(_sgo.Scatter(x=df["date"], y=df["vwap_20d"], name="VWAP 20d",
-                line=dict(color=CHART_COLORS["vwap"], width=1.5, dash="dot")))
-            _sc1.update_layout(**chart_layout(_dark, height=180))
-            st.plotly_chart(_sc1, use_container_width=True)
+            # Fix 15.3 — theme-aware chart layout
+            _chart_layout = chart_layout(_dark)
 
-            # Chart 2 — Volume
-            _scols = [CHART_COLORS["vol_up"] if c >= o else CHART_COLORS["vol_down"]
-                      for c, o in zip(df["close"], df["close"].shift(1).fillna(df["close"]))]
-            _sc2 = _sgo.Figure()
-            _sc2.add_trace(_sgo.Bar(x=df["date"], y=df["volume"], marker_color=_scols))
-            _sc2.update_layout(**{**chart_layout(_dark, height=110), "showlegend": False})
-            st.plotly_chart(_sc2, use_container_width=True)
+            # Chart 1 — Price + VWAP (220px)
+            fig1 = go.Figure()
+            fig1.add_trace(go.Scatter(x=df["date"], y=df["close"], name="Close",
+                                       line=dict(color=CHART_COLORS["close"], width=1.5)))
+            fig1.add_trace(go.Scatter(x=df["date"], y=df["vwap_20d"], name="VWAP 20d",
+                                       line=dict(color=CHART_COLORS["vwap"], width=1.5, dash="dot")))
+            fig1.update_layout(**chart_layout(_dark, height=220))
+            st.plotly_chart(fig1, use_container_width=True)
 
-            # Chart 3 — RSI
-            _sc3 = _sgo.Figure()
-            _sc3.add_trace(_sgo.Scatter(x=df["date"], y=df["rsi_14"], name="RSI-14",
-                line=dict(color=CHART_COLORS["rsi"], width=1.5)))
-            _sc3.add_hline(y=VALIDATION_CONFIG["rsi_overbought"], line_dash="dash",
-                line_color="#ef4444", line_width=0.8, annotation_text="70", annotation_font_size=9)
-            _sc3.add_hline(y=VALIDATION_CONFIG["rsi_oversold"], line_dash="dash",
-                line_color="#10b981", line_width=0.8, annotation_text="30", annotation_font_size=9)
-            _sc3.update_yaxes(range=[0, 100], tickvals=[0, 30, 70, 100])
-            _sc3.update_layout(**{**chart_layout(_dark, height=150), "showlegend": False})
-            st.plotly_chart(_sc3, use_container_width=True)
+            # Chart 2 — Volume bars green/red (150px)
+            colours = [CHART_COLORS["vol_up"] if c >= o else CHART_COLORS["vol_down"]
+                       for c, o in zip(df["close"], df["close"].shift(1).fillna(df["close"]))]
+            fig2 = go.Figure()
+            fig2.add_trace(go.Bar(x=df["date"], y=df["volume"], marker_color=colours, name="Volume"))
+            fig2.update_layout(**{**chart_layout(_dark, height=150), "showlegend": False})
+            st.plotly_chart(fig2, use_container_width=True)
 
-            # Chart 4 — EMA vs SMA
-            _macro_df = (df[["month","macro_ema_3m","macro_sma_3m"]]
-                .drop_duplicates("month").sort_values("month")
-                .dropna(subset=["macro_ema_3m","macro_sma_3m"]))
-            _sc4 = _sgo.Figure()
-            _sc4.add_trace(_sgo.Scatter(x=_macro_df["month"], y=_macro_df["macro_ema_3m"],
-                name="EMA 3m", line=dict(color=CHART_COLORS["ema"], width=2)))
-            _sc4.add_trace(_sgo.Scatter(x=_macro_df["month"], y=_macro_df["macro_sma_3m"],
-                name="SMA 3m", line=dict(color=CHART_COLORS["sma"], width=2, dash="dash")))
-            _sc4.update_layout(**chart_layout(_dark, height=150))
-            st.plotly_chart(_sc4, use_container_width=True)
-            st.caption("Blue solid = EMA (accelerating). Amber dashed = SMA (lagging). EMA > SMA = tightening macro.")
+            # Chart 3 — RSI y-axis 0–100 (180px)
+            fig3 = go.Figure()
+            fig3.add_trace(go.Scatter(x=df["date"], y=df["rsi_14"], name="RSI-14",
+                                       line=dict(color=CHART_COLORS["rsi"], width=1.5)))
+            fig3.add_hline(y=VALIDATION_CONFIG["rsi_overbought"], line_dash="dash",
+                           line_color="#ef4444", line_width=0.8,
+                           annotation_text="70", annotation_font_size=9)
+            fig3.add_hline(y=VALIDATION_CONFIG["rsi_oversold"], line_dash="dash",
+                           line_color="#10b981", line_width=0.8,
+                           annotation_text="30", annotation_font_size=9)
+            fig3.update_yaxes(range=[0, 100], tickvals=[0, 30, 70, 100])
+            fig3.update_layout(**{**chart_layout(_dark, height=180), "showlegend": False})
+            st.plotly_chart(fig3, use_container_width=True)
 
-            # Divider before Risk Analytics
-            st.markdown(f'<hr style="border:none;border-top:0.5px solid {_P["border"]};margin:12px 0;"/>', unsafe_allow_html=True)
-
-            # Risk Analytics
-            st.markdown(f"""
-<div style="font-size:10px;color:{_P['text_sec']};text-transform:uppercase;
-            letter-spacing:.1em;margin-bottom:4px;">Risk analytics</div>
-<div style="font-size:11px;color:{_P['text_body']};margin-bottom:8px;line-height:1.4;">
-  Risk-adjusted performance context.
-</div>
-""", unsafe_allow_html=True)
-
-            _tile_colors = {"good": "#0f9d58", "warn": "#b45309", "bad": "#d93025", "na": "#9aa0a6"}
-
-            def kpi_tile(col, label, value, color, sublabel):
-                col.markdown(f"""
-<div style="border:1px solid {_P['border']};border-radius:6px;
-            padding:8px 12px;background:{_P['card_bg']};">
-  <div style="font-size:9px;color:{_P['text_sec']};text-transform:uppercase;letter-spacing:.06em;">{label}</div>
-  <div style="font-size:18px;font-weight:500;color:{_tile_colors[color]};line-height:1.2;">{value}</div>
-  <div style="font-size:10px;color:{_P['text_sec']};">{sublabel}</div>
-</div>
-""", unsafe_allow_html=True)
-
-            # Use safe_float(latest, col) — always from filtered df
-            _sv  = safe_float(latest, "sharpe_20d")
-            _mv  = safe_float(latest, "mdd_90d")
-            _vv  = safe_float(latest, "volatility_20d")
-            _ev  = safe_float(latest, "vwap_efficiency")
-            _spv = safe_float(latest, "yield_spread")
-
-            _sk1, _sk2 = st.columns(2)
-            kpi_tile(_sk1, "Sharpe 20d",
-                f"{_sv:.2f}" if _sv else "—",
-                "good" if _sv > 1 else "warn" if _sv >= 0 else "bad" if _sv else "na",
-                "risk-adjusted return" if _sv else "warmup period")
-            kpi_tile(_sk2, "Max drawdown 90d",
-                f"{_mv:.1f}%" if _mv else "—",
-                "good" if _mv > -10 else "warn" if _mv > -20 else "bad" if _mv else "na",
-                "controlled" if _mv > -10 else "elevated" if _mv else "warmup period")
-
-            _sk3, _sk4 = st.columns(2)
-            kpi_tile(_sk3, "Volatility 20d",
-                f"{_vv:.1f}%" if _vv else "—",
-                "good" if _vv < 12 else "warn" if _vv < 20 else "bad" if _vv else "na",
-                "low regime" if _vv < 12 else "elevated" if _vv >= 20 else "normal")
-            kpi_tile(_sk4, "VWAP efficiency",
-                f"{_ev:.1f}" if _ev else "—",
-                "good" if _ev > 97 else "warn" if _ev > 94 else "bad" if _ev else "na",
-                "orderly" if _ev > 97 else "deviation signal" if _ev else "normal")
-
-            _sk5, _ = st.columns([1, 1])
-            kpi_tile(_sk5, "Yield spread",
-                f"+{_spv:.2f}%" if _spv > 0 else f"{_spv:.2f}%" if _spv else "—",
-                "good" if _spv > 0.5 else "warn" if _spv >= 0 else "bad" if _spv else "na",
-                "normal curve" if _spv > 0.5 else "compressing" if _spv >= 0 else "inverted — caution")
+            # Chart 4 — EMA vs SMA (180px)
+            fig4 = go.Figure()
+            fig4.add_trace(go.Scatter(x=df["date"], y=df["macro_ema_3m"], name="EMA 3m",
+                                       line=dict(color=CHART_COLORS["ema"], width=2)))
+            fig4.add_trace(go.Scatter(x=df["date"], y=df["macro_sma_3m"], name="SMA 3m",
+                                       line=dict(color=CHART_COLORS["sma"], width=2, dash="dash")))
+            fig4.update_layout(**chart_layout(_dark, height=180))
+            st.plotly_chart(fig4, use_container_width=True)
+            st.caption("Blue solid = EMA (accelerating rate). Amber dashed = SMA (lagging rate). "
+                       "EMA above SMA signals tightening macro regime.")
 
         except Exception as e:
             st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
@@ -1390,10 +1357,12 @@ with tab_market:
                 f'{explanation}</div>',
                 unsafe_allow_html=True,
             )
-            if st.button("↺ Regenerate", key="regen", use_container_width=True):
-                st.session_state.pop("llm_explanation", None)
-                st.session_state["llm_explanation"] = call_llm(triggered_rules, latest)
-                st.rerun()
+            _regen_col, _ = st.columns([1, 3])
+            with _regen_col:
+                if st.button("↺ Regenerate", key="regen"):
+                    st.session_state.pop("llm_explanation", None)
+                    st.session_state["llm_explanation"] = call_llm(triggered_rules, latest)
+                    st.rerun()
 
             # 2. Triggered signals AFTER AI
             st.markdown(f"<div style='font-size:10px;color:{_P['text_sec']};text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px 0;'>Triggered signals</div>", unsafe_allow_html=True)
@@ -1624,7 +1593,7 @@ with tab_market:
 """, unsafe_allow_html=True)
 
             # PDF export
-            if st.button("Export PDF Report", use_container_width=True):
+            if st.button("Export PDF Report"):
                 CHECKPOINT = "pdf_export"
                 try:
                     from io import BytesIO
