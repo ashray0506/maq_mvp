@@ -724,17 +724,26 @@ header[data-testid="stHeader"] {{ display: none; }}
 
 /* Button overrides */
 .stButton > button {{
-    border: 1px solid {_P['border']} !important;
+    border: 0.5px solid {_P['border']} !important;
     background: {_P['card_bg']} !important;
     color: {_P['text_body']} !important;
     font-size: 11px !important;
-    padding: 5px 10px !important;
+    padding: 4px 10px !important;
     border-radius: 4px !important;
-    width: 100%;
+    min-height: 32px !important;
+    max-height: 40px !important;
+    line-height: 1.2 !important;
 }}
 .stButton > button:hover {{
     background: {_P['hover_bg']} !important;
     border-color: {_P['text_sec']} !important;
+    color: {_P['text_pri']} !important;
+}}
+/* Prevent column buttons from wrapping */
+div[data-testid="stHorizontalBlock"] .stButton > button {{
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
 }}
 
 /* Text inputs */
@@ -841,20 +850,17 @@ label, .stSelectbox label, .stSlider label, .stRadio label,
     font-weight: 600 !important;
 }}
 
-/* Period preset buttons — compact chip style */
-div[data-testid="column"] .stButton > button {{
-    border: 1px solid {_P['border']} !important;
-    background: {_P['card_bg']} !important;
-    color: {_P['text_body']} !important;
-    font-size: 11px !important;
-    padding: 4px 0 !important;
-    border-radius: 4px !important;
-    font-weight: 400 !important;
+/* Small icon buttons — regenerate, topbar toggles */
+button[kind="secondary"] {{
+    min-height: 28px !important;
+    padding: 2px 8px !important;
+    font-size: 12px !important;
 }}
-div[data-testid="column"] .stButton > button:hover {{
-    background: {_P['hover_bg']} !important;
-    border-color: {_P['text_sec']} !important;
-    color: {_P['text_pri']} !important;
+/* Topbar buttons — match dark toggle size */
+div[data-testid="stHorizontalBlock"] button {{
+    min-height: 32px !important;
+    font-size: 11px !important;
+    padding: 4px 8px !important;
 }}
 
 @media print {{
@@ -874,6 +880,19 @@ div[data-testid="column"] .stButton > button:hover {{
 .print-header, .print-only {{ display: none; }}
 .screen-only {{ display: block; }}
 </style>
+<script>
+function setPeriod(days) {{
+    const inputs = window.parent.document.querySelectorAll('input[type="number"]');
+    for (const inp of inputs) {{
+        if (parseInt(inp.min) === 21) {{
+            inp.value = days;
+            inp.dispatchEvent(new Event('input', {{bubbles:true}}));
+            inp.dispatchEvent(new Event('change', {{bubbles:true}}));
+            break;
+        }}
+    }}
+}}
+</script>
 """, unsafe_allow_html=True)
 
 # Print-only header (hidden on screen, shown when printing)
@@ -1192,23 +1211,44 @@ with tab_market:
   <div style="font-size:9px;color:{_P['text_sec']};text-transform:uppercase;
               letter-spacing:.1em;margin-bottom:6px;">View controls</div>
 """, unsafe_allow_html=True)
-        _fb1, _fb2, _fb3 = st.columns([1, 1, 3])
+        _fb1, _fb2, _fb3 = st.columns([0.8, 0.8, 2.4])
         with _fb1:
             _sel_sym = st.selectbox("Index", symbols, index=0, key="filter_symbol")
         with _fb2:
             _sel_mac = st.selectbox("Macro series", macro_series_list, index=0, key="filter_macro",
                 help="FEDFUNDS = Federal Funds Rate. GS10 = 10Y Treasury yield.")
         with _fb3:
-            _fp1, _fp2, _fp3, _fp4, _fp5, _fp6 = st.columns([0.4,0.4,0.4,0.4,0.4,3])
-            _fpresets = {"1M": 21, "3M": 63, "6M": 126, "YTD": 252, "Max": _max_days}
-            for _fpi, (_fplbl, _fpdays) in enumerate(_fpresets.items()):
-                [_fp1, _fp2, _fp3, _fp4, _fp5][_fpi].button(
-                    _fplbl, key=f"period_{_fplbl}", use_container_width=True,
-                    on_click=lambda d=_fpdays: st.session_state.update(
-                        {"selected_days": min(d, _max_days)}))
-            lookback = _fp6.slider("Days", min_value=21, max_value=_max_days,
-                                   value=st.session_state["selected_days"], step=7,
-                                   label_visibility="collapsed")
+            _fpresets = [("1M", 21), ("3M", 63), ("6M", 126), ("YTD", 252), ("Max", _max_days)]
+            _active = st.session_state["selected_days"]
+            _preset_html = '<div style="display:flex;gap:4px;margin-bottom:6px;">'
+            for _lbl, _days in _fpresets:
+                _dc = min(_days, _max_days)
+                _is_on = (_active == _dc)
+                _pbg = "#E6F1FB" if _is_on else "transparent"
+                _pbdr = "#378ADD" if _is_on else "#5f6368"
+                _pcol = "#0C447C" if _is_on else "#9aa0a6"
+                _pw = "600" if _is_on else "400"
+                _preset_html += (
+                    f'<button onclick="setPeriod({_dc})" '
+                    f'style="padding:4px 10px;border:0.5px solid {_pbdr};'
+                    f'border-radius:4px;background:{_pbg};color:{_pcol};'
+                    f'font-size:11px;font-weight:{_pw};cursor:pointer;'
+                    f'white-space:nowrap;font-family:system-ui,sans-serif;">'
+                    f'{_lbl}</button>'
+                )
+            _preset_html += '</div>'
+            st.markdown(_preset_html, unsafe_allow_html=True)
+            _period_val = st.number_input(
+                "period_hidden", min_value=21, max_value=_max_days,
+                value=st.session_state["selected_days"], step=1,
+                label_visibility="collapsed", key="period_input",
+            )
+            if _period_val != st.session_state["selected_days"]:
+                st.session_state["selected_days"] = _period_val
+                st.rerun()
+            lookback = st.slider("Fine-tune", min_value=21, max_value=_max_days,
+                                 value=st.session_state["selected_days"], step=7,
+                                 label_visibility="collapsed")
             st.session_state["selected_days"] = lookback
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1380,8 +1420,15 @@ with tab_market:
 
             # Fix 18.3 — CORRECT ORDER: AI first (overview) → signals (specifics) → Ask (collapsed)
 
-            # 1. AI interpretation FIRST
-            st.markdown(f"<div style='font-size:10px;color:{_P['text_sec']};text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;'>AI interpretation</div>", unsafe_allow_html=True)
+            # 1. AI interpretation FIRST — label + icon button inline
+            _ai_label_col, _ai_btn_col = st.columns([4, 1])
+            with _ai_label_col:
+                st.markdown(f"<div style='font-size:10px;color:{_P['text_sec']};text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;'>AI interpretation</div>", unsafe_allow_html=True)
+            with _ai_btn_col:
+                if st.button("↺", key="regen", help="Regenerate AI interpretation", use_container_width=True):
+                    st.session_state.pop("llm_explanation", None)
+                    st.session_state["llm_explanation"] = call_llm(triggered_rules, latest)
+                    st.rerun()
             explanation = st.session_state.get("llm_explanation", "")
             st.markdown(
                 f'<div style="background:{_P["card_bg"]};border:1px solid {_P["border"]};'
@@ -1390,10 +1437,6 @@ with tab_market:
                 f'{explanation}</div>',
                 unsafe_allow_html=True,
             )
-            if st.button("↺ Regenerate", key="regen", use_container_width=True):
-                st.session_state.pop("llm_explanation", None)
-                st.session_state["llm_explanation"] = call_llm(triggered_rules, latest)
-                st.rerun()
 
             # 2. Triggered signals AFTER AI
             st.markdown(f"<div style='font-size:10px;color:{_P['text_sec']};text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px 0;'>Triggered signals</div>", unsafe_allow_html=True)
