@@ -304,9 +304,27 @@ def evaluate_nba_rules(df: pd.DataFrame) -> list[dict]:
           has_macro and macro > 4.0,
           "Fed Funds above 4% — restrictive monetary policy environment")
 
+    # Yield curve rules (Phase 2)
+    _rule("YIELD_INVERSION", "Yield curve inverted", "HIGH",
+          has_spread and spread < 0,
+          "Macro Warning — Inversion historically precedes recession")
+    _rule("YIELD_COMPRESSING", "Yield spread compressing", "MEDIUM",
+          has_spread and 0 <= spread < 0.3,
+          "Macro Caution — Spread narrowing toward inversion")
+
     # Sort: HIGH → MEDIUM → LOW
     order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
     return sorted(rules, key=lambda r: order.get(r["severity"], 9))
+
+
+def evaluate_nba_on_projected(projected: dict) -> list[dict]:
+    """Re-run NBA rules against projected metric values from a what-if scenario.
+    Accepts a dict instead of a DataFrame row. Tags each rule name with [PROJECTED]."""
+    proxy = pd.Series(projected)
+    rules = evaluate_nba_rules(pd.DataFrame([projected]))
+    for r in rules:
+        r["name"] = f"[PROJECTED] {r['name']}"
+    return rules
 
 
 def _fmt_val(val, fmt=".2f", suffix="") -> str:
@@ -555,7 +573,9 @@ div[data-testid="column"] .stButton > button:hover {{
 # Top-level tabs — market content renders into tab_market by default;
 # governance content is explicitly wrapped at the bottom of this file.
 # ---------------------------------------------------------------------------
-tab_market, tab_governance, tab_observability = st.tabs(["📈 Market Analytics", "📋 Governance", "🔬 Observability"])
+tab_market, tab_governance, tab_observability, tab_whatif = st.tabs([
+    "📈 Market Analytics", "📋 Governance", "🔬 Observability", "🔮 What-if"
+])
 
 # Switch Streamlit's active container to tab_market for all content below
 with tab_market:
@@ -1006,9 +1026,16 @@ with tab_market:
     """, unsafe_allow_html=True)
 
             # AI explanation (auto-loaded on open)
-            st.markdown("**AI Analysis**")
+            st.markdown(f"<div style='font-size:11px;color:{_P['text_sec']};text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;'>AI analysis</div>", unsafe_allow_html=True)
             explanation = st.session_state.get("llm_explanation", "")
-            st.markdown(explanation)
+            st.markdown(
+                f'<div style="background:{_P["card_bg"]};border:1px solid {_P["border"]};'
+                f'border-radius:6px;padding:10px 12px;font-size:12px;color:{_P["text_body"]};'
+                f'line-height:1.6;word-wrap:break-word;overflow-wrap:break-word;'
+                f'white-space:pre-wrap;margin-bottom:8px;">'
+                f'{explanation}</div>',
+                unsafe_allow_html=True,
+            )
 
             if st.button("Regenerate"):
                 st.session_state.pop("llm_explanation", None)
@@ -1686,6 +1713,340 @@ with tab_observability:
                     st.info("No actions logged yet.")
                 else:
                     st.dataframe(_nba_act_df[["timestamp", "reference_id", "action_type", "rule_ids"]], use_container_width=True, hide_index=True)
+
+    except Exception as e:
+        st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
+
+# ---------------------------------------------------------------------------
+# What-if tab (Phase 2)
+# ---------------------------------------------------------------------------
+with tab_whatif:
+    CHECKPOINT = "whatif_tab"
+    try:
+        import importlib.util as _ilu, pathlib as _pl, io as _io
+        _sc_path = _pl.Path(__file__).parent / "scenarios.py"
+        _sc_spec = _ilu.spec_from_file_location("scenarios", _sc_path)
+        _sc_mod  = _ilu.module_from_spec(_sc_spec)
+        _sc_spec.loader.exec_module(_sc_mod)
+        scenario_vol_shock       = _sc_mod.scenario_vol_shock
+        scenario_market_drawdown = _sc_mod.scenario_market_drawdown
+        scenario_rate_shock      = _sc_mod.scenario_rate_shock
+
+        _wi_con = get_connection()
+        _wi_session = st.session_state.get("session_id", "pre-session")
+
+        # Header
+        st.markdown(f"""
+<div style="font-size:10px;color:{_P['text_sec']};text-transform:uppercase;
+            letter-spacing:.1em;padding:12px 0 4px 0;">What-if scenario analysis</div>
+<div style="font-size:12px;color:{_P['text_body']};margin-bottom:16px;">
+  Illustrative portfolio impact · 60/40 balanced allocation proxy · Not financial advice
+</div>
+""", unsafe_allow_html=True)
+
+        _wi_left, _wi_right = st.columns([1, 1.6])
+
+        with _wi_left:
+            st.markdown(f'<div style="font-size:13px;font-weight:600;color:{_P["text_pri"]};padding-bottom:10px;border-bottom:1px solid {_P["border"]};margin-bottom:14px;">Scenario inputs</div>', unsafe_allow_html=True)
+
+            _notional = st.number_input(
+                "Illustrative portfolio value ($)",
+                min_value=100_000,
+                max_value=100_000_000,
+                value=1_000_000,
+                step=100_000,
+                format="%d",
+            )
+
+            _scenario_type = st.radio(
+                "Scenario type",
+                ["Volatility shock", "Market drawdown", "Rate shock"],
+            )
+
+            # Load latest metrics for current values + slider anchors
+            _wi_latest = df.iloc[-1] if not df.empty else pd.Series({})
+            _cur_vol   = float(_wi_latest.get("volatility_20d") or 15.0)
+            _cur_sharpe = float(_wi_latest.get("sharpe_20d") or 0.0)
+
+            if _scenario_type == "Volatility shock":
+                st.caption(f"Current volatility: {_cur_vol:.1f}%")
+                _target_vol = st.slider(
+                    "Target volatility (%)",
+                    min_value=float(max(_cur_vol, 10.0)),
+                    max_value=40.0,
+                    value=float(min(_cur_vol * 2, 40.0)),
+                    step=0.5,
+                    format="%.1f%%",
+                )
+            elif _scenario_type == "Market drawdown":
+                _drawdown = st.slider(
+                    "Index decline (%)",
+                    min_value=-30,
+                    max_value=-5,
+                    value=-15,
+                    step=1,
+                    format="%d%%",
+                )
+            else:
+                _rate_change = st.slider(
+                    "Rate increase (bps)",
+                    min_value=25,
+                    max_value=200,
+                    value=100,
+                    step=25,
+                    format="%dbps",
+                )
+
+            _run_btn = st.button("Run scenario", use_container_width=True, type="primary")
+
+        with _wi_right:
+            st.markdown(f'<div style="font-size:13px;font-weight:600;color:{_P["text_pri"]};padding-bottom:10px;border-bottom:1px solid {_P["border"]};margin-bottom:14px;">Projected impact</div>', unsafe_allow_html=True)
+
+            if _run_btn or "whatif_result" in st.session_state:
+                # Compute or retrieve scenario result
+                if _run_btn:
+                    _cm = _wi_latest.to_dict() if not _wi_latest.empty else {}
+                    if _scenario_type == "Volatility shock":
+                        _result = scenario_vol_shock(_cm, _target_vol, _notional)
+                    elif _scenario_type == "Market drawdown":
+                        _result = scenario_market_drawdown(_cm, _drawdown, _notional)
+                    else:
+                        _result = scenario_rate_shock(_cm, _rate_change, _notional)
+                    st.session_state["whatif_result"] = _result
+
+                    # Audit log every run
+                    _wi_con.execute(
+                        "INSERT INTO audit_nba_actions VALUES (?, ?, ?, ?, ?, ?)",
+                        [
+                            str(uuid.uuid4()),
+                            f"REF-{str(uuid.uuid4())[:8].upper()}",
+                            _wi_session,
+                            "whatif_scenario",
+                            _result["scenario"],
+                            datetime.now(timezone.utc),
+                        ],
+                    )
+                else:
+                    _result = st.session_state["whatif_result"]
+
+                _curr = _result["current"]
+                _proj = _result["projected"]
+                _di   = _result["dollar_impact"]
+
+                # Section label
+                st.markdown(f"""
+<div style="font-size:10px;color:{_P['text_sec']};text-transform:uppercase;
+            letter-spacing:.06em;margin-bottom:10px;">
+  {_result['input_label']} — projected vs current
+</div>
+""", unsafe_allow_html=True)
+
+                # KPI comparison grid
+                _label_map = {
+                    "sharpe":       "Sharpe",
+                    "mdd":          "Max DD",
+                    "vol":          "Volatility",
+                    "yield_spread": "Yield spread",
+                    "fed_funds":    "Fed Funds",
+                }
+                _kpi_keys = list(_curr.keys())
+                _kpi_cols = st.columns(len(_kpi_keys))
+                for _i, _key in enumerate(_kpi_keys):
+                    _cv  = _curr[_key]
+                    _pv  = _proj.get(_key)
+                    if _pv is None:
+                        continue
+                    _lbl = _label_map.get(_key, _key)
+                    _chg = _pv - _cv if isinstance(_pv, (int, float)) else 0
+                    _worse = (
+                        (_key == "sharpe" and _chg < 0) or
+                        (_key == "mdd"    and _chg < 0) or
+                        (_key == "vol"    and _chg > 0) or
+                        (_key == "yield_spread" and _chg < 0)
+                    )
+                    _arrow = "▼" if _worse else ("▲" if _chg > 0 else "→")
+                    _kc    = "#d93025" if _worse else "#0f9d58"
+                    _kpi_cols[_i].markdown(f"""
+<div style="background:{_P['card_bg']};border:1px solid {_P['border']};border-radius:6px;
+            padding:10px;text-align:center;">
+  <div style="font-size:9px;color:{_P['text_sec']};text-transform:uppercase;
+              letter-spacing:.05em;margin-bottom:4px;">{_lbl}</div>
+  <div style="font-size:11px;color:{_P['text_sec']};margin-bottom:2px;">{_cv}</div>
+  <div style="font-size:16px;font-weight:500;color:{_kc};">{_pv} {_arrow}</div>
+</div>
+""", unsafe_allow_html=True)
+
+                # Dollar impact card
+                _total     = _di["total"]
+                _tc        = "#d93025" if _total < 0 else "#0f9d58"
+                st.markdown(f"""
+<div style="background:{_P['card_bg']};border:1px solid {_P['border']};border-radius:6px;
+            padding:14px;margin-top:12px;">
+  <div style="font-size:10px;color:{_P['text_sec']};text-transform:uppercase;
+              letter-spacing:.06em;margin-bottom:10px;">
+    Illustrative portfolio impact (${_di['notional']:,.0f} · 60/40)
+  </div>
+  <div style="display:grid;grid-template-columns:1fr auto;gap:6px 16px;font-size:12px;">
+    <div style="color:{_P['text_body']};">Equity leg (${_di['equity_allocation']:,.0f})</div>
+    <div style="color:{_tc};font-weight:500;text-align:right;">${_di['equity_leg']:+,.0f}</div>
+    <div style="color:{_P['text_body']};">Bond leg (${_di['bond_allocation']:,.0f})</div>
+    <div style="color:{_P['text_body']};text-align:right;">${_di['bond_leg']:+,.0f}</div>
+    <div style="color:{_P['text_pri']};font-weight:600;border-top:1px solid {_P['border']};
+                padding-top:6px;">Total illustrative impact</div>
+    <div style="color:{_tc};font-weight:700;font-size:16px;text-align:right;
+                border-top:1px solid {_P['border']};padding-top:6px;">${_total:+,.0f}</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+                # Projected NBA signals
+                st.markdown(f"""
+<div style="font-size:10px;color:{_P['text_sec']};text-transform:uppercase;
+            letter-spacing:.06em;margin-top:14px;margin-bottom:6px;">
+  Projected NBA signals
+</div>
+""", unsafe_allow_html=True)
+
+                # Build projected metrics dict for NBA evaluation
+                _proj_metrics = dict(_wi_latest.to_dict())
+                _proj_metrics.update(_proj)
+                _proj_rules = evaluate_nba_on_projected(_proj_metrics)
+
+                if _proj_rules:
+                    for _pr in _proj_rules[:3]:
+                        _pdot = {"HIGH": "#ef4444", "MEDIUM": "#f59e0b", "LOW": "#10b981"}.get(_pr["severity"], "#9aa0a6")
+                        st.markdown(f"""
+<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;
+            border:1px solid {_P['border']};border-radius:6px;margin-bottom:4px;
+            background:{_P['card_bg']};">
+  <div style="width:8px;height:8px;border-radius:50%;background:{_pdot};
+              flex-shrink:0;margin-top:3px;"></div>
+  <div>
+    <div style="font-size:11px;font-weight:500;color:{_P['text_pri']};">{_pr['name']}</div>
+    <div style="font-size:10px;color:{_P['text_sec']};">{_pr['action'][:80]}{'…' if len(_pr['action'])>80 else ''}</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;
+            border:1px solid {_P['border']};border-radius:6px;background:{_P['card_bg']};">
+  <div style="width:8px;height:8px;border-radius:50%;background:#0f9d58;flex-shrink:0;"></div>
+  <div style="font-size:11px;color:#166534;font-weight:500;">No NBA rules triggered on projected values</div>
+</div>
+""", unsafe_allow_html=True)
+
+                # Action buttons + PDF
+                st.divider()
+                _wa1, _wa2 = st.columns(2)
+
+                with _wa1:
+                    if st.button("📨 Send to back office", key="wi_backoffice", use_container_width=True):
+                        _wref = f"REF-{str(uuid.uuid4())[:8].upper()}"
+                        _wi_con.execute(
+                            "INSERT INTO audit_nba_actions VALUES (?, ?, ?, ?, ?, ?)",
+                            [str(uuid.uuid4()), _wref, _wi_session,
+                             "whatif_back_office", _result["scenario"],
+                             datetime.now(timezone.utc)],
+                        )
+                        st.success(f"Logged · {_wref}")
+
+                with _wa2:
+                    if st.button("📄 Export scenario PDF", key="wi_pdf", use_container_width=True):
+                        try:
+                            from reportlab.lib import colors as _rl_colors
+                            from reportlab.lib.pagesizes import A4
+                            from reportlab.lib.styles import getSampleStyleSheet
+                            from reportlab.lib.units import cm
+                            from reportlab.platypus import (
+                                Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+                            )
+                            _buf = _io.BytesIO()
+                            _doc = SimpleDocTemplate(_buf, pagesize=A4,
+                                                     rightMargin=2*cm, leftMargin=2*cm,
+                                                     topMargin=2*cm, bottomMargin=2*cm)
+                            _sty = getSampleStyleSheet()
+                            _story = []
+                            _story.append(Paragraph("Market Analytics Platform", _sty["Title"]))
+                            _story.append(Paragraph(
+                                f"What-if Scenario Report · {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
+                                _sty["Normal"],
+                            ))
+                            _story.append(Spacer(1, 0.3*cm))
+                            _story.append(Paragraph("Scenario", _sty["Heading2"]))
+                            _story.append(Paragraph(_result["input_label"], _sty["Normal"]))
+                            _story.append(Spacer(1, 0.3*cm))
+                            _story.append(Paragraph("Current vs Projected KPIs", _sty["Heading2"]))
+                            _kpi_rows = [["Metric", "Current", "Projected", "Change"]]
+                            for _k in _curr:
+                                _cv2 = _curr[_k]
+                                _pv2 = _proj.get(_k, "—")
+                                _chg2 = (f"{_pv2 - _cv2:+.2f}"
+                                         if isinstance(_pv2, (int, float)) and isinstance(_cv2, (int, float))
+                                         else "—")
+                                _kpi_rows.append([_label_map.get(_k, _k), str(_cv2), str(_pv2), _chg2])
+                            _kt = Table(_kpi_rows, colWidths=[4*cm, 3*cm, 3*cm, 3*cm])
+                            _kt.setStyle(TableStyle([
+                                ("BACKGROUND", (0, 0), (-1, 0), _rl_colors.darkblue),
+                                ("TEXTCOLOR",  (0, 0), (-1, 0), _rl_colors.whitesmoke),
+                                ("GRID",       (0, 0), (-1, -1), 0.5, _rl_colors.lightgrey),
+                                ("FONTNAME",   (0, 0), (-1, 0), "Helvetica-Bold"),
+                                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [_rl_colors.whitesmoke, _rl_colors.white]),
+                            ]))
+                            _story.append(_kt)
+                            _story.append(Spacer(1, 0.3*cm))
+                            _story.append(Paragraph("Illustrative Portfolio Impact", _sty["Heading2"]))
+                            _imp_rows = [
+                                ["Component", "Allocation", "Impact"],
+                                ["Equity leg", f"${_di['equity_allocation']:,.0f}", f"${_di['equity_leg']:+,.0f}"],
+                                ["Bond leg",   f"${_di['bond_allocation']:,.0f}",   f"${_di['bond_leg']:+,.0f}"],
+                                ["Total",      f"${_di['notional']:,.0f}",           f"${_di['total']:+,.0f}"],
+                            ]
+                            _it = Table(_imp_rows, colWidths=[5*cm, 4*cm, 4*cm])
+                            _it.setStyle(TableStyle([
+                                ("BACKGROUND", (0, 0), (-1, 0), _rl_colors.grey),
+                                ("TEXTCOLOR",  (0, 0), (-1, 0), _rl_colors.whitesmoke),
+                                ("GRID",       (0, 0), (-1, -1), 0.5, _rl_colors.lightgrey),
+                                ("FONTNAME",   (0, -1), (-1, -1), "Helvetica-Bold"),
+                            ]))
+                            _story.append(_it)
+                            _story.append(Spacer(1, 0.3*cm))
+                            _story.append(Paragraph("Projected NBA Signals", _sty["Heading2"]))
+                            for _pr2 in _proj_rules[:3]:
+                                _story.append(Paragraph(f"• {_pr2['name']} — {_pr2['action']}", _sty["Normal"]))
+                            _story.append(Spacer(1, 0.4*cm))
+                            _story.append(Paragraph(_result["assumption"], _sty["Italic"]))
+                            _story.append(Paragraph(
+                                "DISCLAIMER: Decision support only. Not financial advice. "
+                                "Illustrative 60/40 proxy allocation. Not based on actual holdings.",
+                                _sty["Italic"],
+                            ))
+                            _doc.build(_story)
+                            _buf.seek(0)
+                            st.download_button(
+                                "⬇ Download PDF",
+                                data=_buf.read(),
+                                file_name=f"whatif_{_result['scenario'].replace(' ','_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                                mime="application/pdf",
+                                use_container_width=True,
+                            )
+                        except Exception as _pdf_err:
+                            st.error(f"PDF generation failed: {_pdf_err}")
+
+                # Assumption disclaimer
+                st.markdown(f"""
+<div style="font-size:10px;color:{_P['text_sec']};margin-top:10px;padding:8px 10px;
+            border:1px solid {_P['border']};border-radius:4px;background:{_P['card_bg']};">
+  ⚠ {_result['assumption']}
+</div>
+""", unsafe_allow_html=True)
+
+            else:
+                st.markdown(f"""
+<div style="color:{_P['text_sec']};font-size:13px;padding:60px 0;text-align:center;">
+  Select a scenario and click <strong>Run scenario</strong> to see projected impact.
+</div>
+""", unsafe_allow_html=True)
 
     except Exception as e:
         st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
