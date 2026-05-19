@@ -134,8 +134,9 @@ Sharpe 20d 0.87 ✅  |  Max DD -4.1% ✅  |  Volatility 14.2% ✅  |  VWAP Eff. 
 | S2 | Completeness ≥ 60 rows | Log WARNING |
 | S3 | No future dates | Quarantine rows |
 | S4 | Join ≥ 3 shared months | Log ERROR, halt |
-| S5 | All dates → UTC | Enforced |
+| S5 | All dates → UTC | Enforced | 
 
+Alpha Vantage is daily OHLCV, FRED is monthly macro. Aligned them by truncating the daily dates to month-level for the join, then forward-filling the monthly rate across all daily rows. All dates normalised to UTC. That's DQ rule S5"
 **Gold — metrics**
 | ID | Rule | On Failure |
 |---|---|---|

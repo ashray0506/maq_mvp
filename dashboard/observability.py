@@ -4,12 +4,58 @@ Port 8502: streamlit run dashboard/observability.py
 Never touch app.py when editing this file.
 """
 
+import os
+import subprocess
+import sys
+from datetime import datetime
+
 import duckdb
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
 DB_PATH = "data/market.duckdb"
+LOCK_FILE = "/tmp/maqa_pipeline.lock"
+
+
+def is_pipeline_running() -> bool:
+    return os.path.exists(LOCK_FILE)
+
+
+def get_lock_age_minutes() -> float:
+    if not os.path.exists(LOCK_FILE):
+        return 0.0
+    return round((datetime.now().timestamp() - os.path.getmtime(LOCK_FILE)) / 60, 1)
+
+
+def run_pipeline() -> None:
+    """Run the full pipeline sequentially, guarded by a lock file."""
+    try:
+        open(LOCK_FILE, "w").close()
+        _env = {**os.environ, "PYTHONPATH": "."}
+        steps = [
+            ([sys.executable, "pipeline/ingest.py"],              "Ingesting bronze..."),
+            ([sys.executable, "pipeline/register_bronze.py"],     "Registering views..."),
+            ([sys.executable, "-m", "pipeline.transform_silver"], "Transforming silver..."),
+            ([sys.executable, "-m", "pipeline.transform_gold"],   "Transforming gold..."),
+            ([sys.executable, "pipeline/validate.py"],            "Validating..."),
+        ]
+        _ph = st.empty()
+        for cmd, label in steps:
+            _ph.info(f"⏳ {label}")
+            result = subprocess.run(cmd, capture_output=True, text=True,
+                                    timeout=180, env=_env)
+            if result.returncode != 0:
+                _ph.error(f"Failed at: {label}\n{result.stderr[-400:]}")
+                return
+        _ph.success(f"Pipeline complete — {datetime.now().strftime('%H:%M:%S')}")
+    except subprocess.TimeoutExpired:
+        st.error("Pipeline timed out after 3 minutes.")
+    except Exception as _e:
+        st.error(f"Pipeline error: {_e}")
+    finally:
+        if os.path.exists(LOCK_FILE):
+            os.remove(LOCK_FILE)
 
 
 @st.cache_resource
@@ -66,35 +112,111 @@ st.set_page_config(
     layout="wide",
 )
 
-st.markdown("""
+from datetime import datetime
+
+# Dark mode state (shared with app.py via session_state)
+if "dark_mode" not in st.session_state:
+    st.session_state["dark_mode"] = True
+_dark = st.session_state["dark_mode"]
+
+# Palette tokens
+_bg       = "#1a1d27" if _dark else "#ffffff"
+_page_bg  = "#0f1117" if _dark else "#f8f9fa"
+_border   = "#2d3142" if _dark else "#e8eaed"
+_txt_pri  = "#e8eaed" if _dark else "#1a1a2e"
+_txt_sec  = "#9aa0a6"
+_txt_body = "#b0bec5" if _dark else "#5f6368"
+
+
+def chart_layout(dark_mode: bool, title: str = "", height: int = 260) -> dict:
+    bg   = "#1a1d27" if dark_mode else "#ffffff"
+    grid = "#2d3142" if dark_mode else "#f1f3f4"
+    fc   = "#9aa0a6" if dark_mode else "#5f6368"
+    lc   = "#2d3142" if dark_mode else "#e8eaed"
+    return dict(
+        title=dict(text=title, font=dict(size=11, color=fc)),
+        height=height, plot_bgcolor=bg, paper_bgcolor=bg,
+        font=dict(family="system-ui,-apple-system,sans-serif", size=11, color=fc),
+        margin=dict(t=32, b=24, l=8, r=8),
+        legend=dict(orientation="h", y=-0.3, font=dict(size=10, color=fc)),
+        xaxis=dict(gridcolor=grid, linecolor=lc, tickfont=dict(size=10, color=fc)),
+        yaxis=dict(gridcolor=grid, linecolor=lc, tickfont=dict(size=10, color=fc)),
+    )
+
+
+st.markdown(f"""
 <style>
-.stApp { background: #f8f9fa; }
-.block-container { padding-top: 0 !important; padding-bottom: 0 !important; max-width: 100% !important; }
-header[data-testid="stHeader"] { display: none; }
-hr { border-color: #e8eaed !important; margin: 12px 0 !important; }
-.stCaption { font-size: 10px !important; color: #9aa0a6 !important; }
+.stApp {{ background: {_page_bg} !important; }}
+.block-container {{ padding-top: 0 !important; max-width: 100% !important; }}
+header[data-testid="stHeader"] {{ display: none; }}
+[data-testid="column"] {{ background: {_bg} !important; border-right: 1px solid {_border}; }}
+[data-testid="column"]:last-child {{ border-right: none; }}
+.stButton > button {{ border: 1px solid {_border} !important; background: {_bg} !important;
+    color: {_txt_body} !important; font-size: 11px !important; border-radius: 4px !important; }}
+.stButton > button:hover {{ background: {_page_bg} !important; color: {_txt_pri} !important; }}
+hr {{ border-color: {_border} !important; margin: 12px 0 !important; }}
+.stCaption {{ font-size: 10px !important; color: {_txt_sec} !important; }}
+[data-testid="stDataFrame"] {{ background: {_bg} !important; }}
+@media print {{
+    .stButton, .stSlider, [data-testid="stSidebar"], header, footer {{ display: none !important; }}
+    .block-container {{ max-width: 100% !important; padding: 0 !important; }}
+    .stApp, [data-testid="column"] {{ background: #ffffff !important; color: #000000 !important; }}
+    .stPlotlyChart {{ page-break-inside: avoid; }}
+    .print-header {{ display: block !important; }}
+}}
+.print-header {{ display: none; }}
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("""
-<div style="background:#fff;border-bottom:1px solid #e8eaed;padding:14px 0 12px 0;
-            display:flex;align-items:center;justify-content:space-between;margin-bottom:0;">
-    <span style="font-size:22px;font-weight:700;color:#1a1a2e;letter-spacing:-0.4px;">
+# Print-only header
+st.markdown(f"""
+<div class="print-header" style="padding:16px 0 8px 0;border-bottom:2px solid #000;margin-bottom:16px;">
+  <div style="font-size:18px;font-weight:700;">Pipeline Observability</div>
+  <div style="font-size:11px;color:#5f6368;">
+    Really Big Bank · Post-trade operations · Printed: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+# Topbar with Print + Dark toggle
+_ob_left, _ob_right = st.columns([8, 2])
+with _ob_left:
+    st.markdown(f"""
+<div style="background:{_bg};border-bottom:1px solid {_border};padding:14px 0 12px 0;
+            display:flex;align-items:center;justify-content:space-between;">
+    <span style="font-size:22px;font-weight:700;color:{_txt_pri};letter-spacing:-0.4px;">
         Pipeline Observability
     </span>
-    <span style="font-size:11px;color:#9aa0a6;">
+    <span style="font-size:11px;color:{_txt_sec};">
         Really Big Bank · Post-trade operations
     </span>
 </div>
 """, unsafe_allow_html=True)
+with _ob_right:
+    _ob1, _ob2 = st.columns(2)
+    with _ob1:
+        if st.button("🖨 Print", key="obs_print", use_container_width=True, help="Print or save as PDF"):
+            st.markdown("<script>window.print();</script>", unsafe_allow_html=True)
+    with _ob2:
+        _obs_toggle = "☀️ Light" if _dark else "🌙 Dark"
+        if st.button(_obs_toggle, key="obs_dark_toggle", use_container_width=True):
+            st.session_state["dark_mode"] = not _dark
+            st.rerun()
 
 
 def _obs_section(text: str) -> None:
     st.markdown(
-        f'<div style="font-size:10px;color:#9aa0a6;text-transform:uppercase;'
+        f'<div style="font-size:10px;color:{_txt_sec};text-transform:uppercase;'
         f'letter-spacing:.1em;padding:12px 0 8px 0;">{text}</div>',
         unsafe_allow_html=True,
     )
+
+# ---------------------------------------------------------------------------
+# Fix 19.4 — Auto-refresh while pipeline is running
+if is_pipeline_running():
+    import time as _time
+    _time.sleep(2)
+    st.rerun()
 
 # ---------------------------------------------------------------------------
 # Load data
@@ -107,6 +229,62 @@ try:
 except Exception as e:
     st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
     st.stop()
+
+# ---------------------------------------------------------------------------
+# Fix 19.3 — Pipeline controls + manual refresh (above health banner)
+# ---------------------------------------------------------------------------
+CHECKPOINT = "pipeline_controls"
+try:
+    _obs_section("Pipeline controls")
+    _pc_run_col, _pc_status_col, _pc_refresh_col = st.columns([1, 2, 1])
+
+    with _pc_run_col:
+        _lock_age = get_lock_age_minutes()
+        if is_pipeline_running() and _lock_age > 10:
+            st.warning(f"Lock {_lock_age:.0f}m old — may have crashed.")
+            if st.button("🗑 Clear lock", key="clear_lock", use_container_width=True):
+                os.remove(LOCK_FILE)
+                st.rerun()
+        elif is_pipeline_running():
+            st.button("⏳ Running…", disabled=True, use_container_width=True,
+                      help="Pipeline is running")
+        else:
+            if st.button("▶ Run pipeline now", use_container_width=True,
+                         type="primary", help="ingest → silver → gold → validate"):
+                run_pipeline()
+                st.rerun()
+
+    with _pc_status_col:
+        try:
+            _con = get_connection()
+            _last = _con.execute("""
+                SELECT finished_at, status, layer FROM audit_pipeline_runs
+                ORDER BY finished_at DESC LIMIT 1
+            """).fetchone()
+            if _last:
+                _ts, _st, _layer = _last
+                _sc = "#0f9d58" if _st == "PASS" else "#d93025"
+                st.markdown(f"""
+<div style="font-size:11px;color:{_txt_body};">
+  Last run: <strong>{str(_ts)[:16]}</strong> ·
+  Layer: {_layer} ·
+  <span style="color:{_sc};font-weight:500;">{_st}</span>
+</div>
+""", unsafe_allow_html=True)
+        except Exception:
+            st.caption("No run history yet.")
+
+    with _pc_refresh_col:
+        if st.button("↺ Refresh", use_container_width=True,
+                     help="Refresh observability metrics"):
+            load_audit_runs.clear()
+            load_dq_results.clear()
+            load_quarantine.clear()
+            st.rerun()
+
+    st.divider()
+except Exception as e:
+    st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
 
 # ---------------------------------------------------------------------------
 # Health banner
@@ -245,9 +423,7 @@ try:
                              marker_color="#64b5f6"))
         fig.add_trace(go.Bar(name="Rows Out", x=flow_df["layer"], y=flow_df["rows_out"],
                              marker_color="#81c784"))
-        fig.update_layout(barmode="group", height=280,
-                          margin=dict(l=0, r=0, t=20, b=0),
-                          legend=dict(orientation="h", y=1.1))
+        fig.update_layout(**{**chart_layout(_dark, height=280), "barmode": "group"})
         st.plotly_chart(fig, use_container_width=True)
 except Exception as e:
     st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
@@ -296,7 +472,7 @@ try:
             ),
             name="Rows Out",
         ))
-        fig_spark.update_layout(height=180, margin=dict(l=0, r=0, t=10, b=0), showlegend=False)
+        fig_spark.update_layout(**{**chart_layout(_dark, height=180), "showlegend": False})
         st.plotly_chart(fig_spark, use_container_width=True)
         st.caption("Green dot = PASS, Red dot = FAIL")
 except Exception as e:

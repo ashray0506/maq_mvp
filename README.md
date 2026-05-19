@@ -114,3 +114,49 @@ Built with Claude Code assistance. Human corrections applied:
 - Benchmark tests written by human with independently computed values
 
 Governance: validate.py gates every merge. Human-written tests provide ground truth AI can't self-validate against.
+
+---
+
+## Data product delivery
+
+How this platform was built mirrors how any data product should be built.
+
+### Concept → requirements
+
+Work with the data product owner to define the question the product must answer — not the metrics, not the schema, the *question*. For this platform: "How has market activity trended over 90 days, and is there anything we should be watching?"
+
+Translate that into a PRD with epics, user stories, and acceptance criteria before writing any code. The acceptance criteria are the contract between engineering and the product owner.
+
+### Build standard
+
+Write the build instructions (CLAUDE.md) before writing the code. The spec governs the implementation — including AI-generated code. Every layer has a defined contract:
+- Bronze is immutable — the audit trail
+- Silver is trusted — the source of truth
+- Gold is consumption-ready — the only dashboard source
+
+Violations of these contracts are detectable and fixable because the contract exists.
+
+### Maintainability and evolution
+
+Each layer can evolve independently:
+- Add a new metric → add a column to transform_gold.py
+- Add a new source → add an ingest function and a bronze view
+- Change the dashboard → app.py only, no pipeline changes
+
+The medallion model separates concerns so the product can be handed to a junior engineer without risk of them breaking upstream data.
+
+### Influencing with data
+
+Build observability before arguing for investment. The observability dashboard shows pipeline health, DQ outcomes, quarantine rates, and run history. If stakeholders push back on data quality investment, show them the quarantine log — not a slide about why data quality matters.
+
+Self-service adoption is measured through the action log: audit_nba_actions shows which recommendations were acted on, by whom, and how quickly. That's the adoption metric. If the platform is being used, the data proves it.
+
+### Handoff to a team member
+
+1. Walk them through the layer model — the why, not the how
+2. Run the pipeline together end-to-end on their machine
+3. Show them the DQ rules table in RUNBOOK.md
+4. Show them a log file — make sure they know ERROR vs WARNING
+5. Enforce the human-written test rule — especially if they use AI
+
+The README is the entry point. The RUNBOOK is for when something breaks. The ADL is for when someone asks why a decision was made. If something isn't in one of these three files, it isn't done.

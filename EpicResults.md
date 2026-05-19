@@ -73,3 +73,29 @@ All 4 sub-fixes applied successfully
 
 Additional update:
 - `lookback_min` changed from `30` → `21` trading days to align with the true `1M` preset behavior.
+
+
+All 6 sub-fixes applied, 12/12 PASS:
+
+  ┌──────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │           Fix            │                                                    Done                                                    │
+  ├──────────Fix ─────────│── ──────────────────────────────────────────────────Done  ────────────────────────────────────────────────────┤
+  │ 13.1 Scenario         ┼  ─ Expandable card per scenario type — What/How/Assumes/Watch for — updates on radio change                   │
+  │ explanation           │ Expand ble card per scenario type — What/How/Assumes/Watch for — updates on radio change                      │
+  ├───────────────────────│── ────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 13.2 CURRENT vs       ┼  ─ render_kpi_comparison() — side-by-side grid with explicit labels, change amount, (worse)/(better) tag      │
+  │ PROJECTED tiles       │ rend r_kpi_comparison() — side-by side grid with explicit labels, change amount, (worse)/(bett r) tag         │
+  ├───────────────────────│── ────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 13.3 Dollar impact    ┼  ─ scenario_vol_shock now uses equity × annual_vol × √(20/252) — produces meaningful tens-of-thousands        │
+  │ formula               │ scenario_v;l_shock now uses equity × annual_vol × √(20/ 52) — produces meaningful tens-of thousands numbers;  │
+  └───────────────────────│─"How was this calcula─ed?" expander   ─        ───────────────────────────────────────────────────────────────┘
+  ├                       ┼  ─                                                                                                            ┤
+● │o13.4 Filter projecteds│sfilter_projected_rules() using RULE_METRIC_MAP — vol shock only shows Sharpe/MDD/Vol rules; rate shock only   │
+  │  NBA                  │ shows yield spread/Sharpe; [PROJECTED] prefix removed, replaced with context banner                           │
+  ├───────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+──│─13.5─Ask─about─this───│─4─example─question─chips─that─prefill─the─input;─scope─boundary─injected─into─system─context;─spinner─says────│───
+  │ data                  │ "Reading the data…"                                                                                           │
+  ├───────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────┤───
+  │ 13.6 My alerts        │ Renamed + metric/operator dropdowns with plain English display; alert preview card in blue; "Test against     │
+  │                       │ last 90 days" button with frequency interpretation                                                            │
+  └───────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

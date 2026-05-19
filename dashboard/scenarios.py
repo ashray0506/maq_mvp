@@ -2,6 +2,7 @@
 What-if scenario functions for Phase 2.
 All outputs are illustrative only — not financial advice.
 """
+import math
 
 
 def scenario_vol_shock(current_metrics: dict, target_vol_pct: float, notional: float) -> dict:
@@ -16,47 +17,51 @@ def scenario_vol_shock(current_metrics: dict, target_vol_pct: float, notional: f
     - sensitivity_factor = 0.6 (empirical — vol doubling implies ~60% of MDD increase)
     - Bond leg: short duration approximation, minor vol impact
     """
-    current_vol   = (current_metrics.get("volatility_20d") or 15.0) / 100
-    current_sharpe = current_metrics.get("sharpe_20d") or 0.0
-    current_mdd   = current_metrics.get("mdd_90d") or 0.0
+    current_vol    = float(current_metrics.get("volatility_20d") or 15.0)
+    current_sharpe = float(current_metrics.get("sharpe_20d") or 0.0)
+    current_mdd    = float(current_metrics.get("mdd_90d") or 0.0)
 
-    target_vol = target_vol_pct / 100
-    vol_ratio  = target_vol / current_vol if current_vol > 0 else 1.0
-
-    projected_sharpe = current_sharpe / vol_ratio if vol_ratio > 0 else 0.0
-    projected_mdd    = current_mdd * vol_ratio * 0.6
-    projected_mdd    = max(projected_mdd, -50.0)
+    vol_ratio        = target_vol_pct / current_vol if current_vol > 0 else 1.0
+    projected_sharpe = round(current_sharpe / vol_ratio, 2) if vol_ratio > 0 else 0.0
+    projected_mdd    = round(max(current_mdd * vol_ratio * 0.7, -50.0), 1)
 
     equity_leg    = notional * 0.60
-    bond_leg      = notional * 0.40
-    equity_impact = equity_leg * (projected_mdd / 100 - current_mdd / 100)
-    bond_impact   = 0.0
-    total_impact  = equity_impact + bond_impact
+    holding_days  = 20  # 1-month horizon
+
+    current_exp_loss   = equity_leg * (current_vol / 100) * math.sqrt(holding_days / 252)
+    projected_exp_loss = equity_leg * (target_vol_pct / 100) * math.sqrt(holding_days / 252)
+    equity_impact      = -(projected_exp_loss - current_exp_loss)
+    bond_impact        = 0.0
+    total_impact       = equity_impact
 
     return {
         "scenario":    "Volatility Shock",
         "input_label": f"Vol rises to {target_vol_pct:.1f}%",
         "current": {
-            "sharpe": round(float(current_sharpe), 2),
-            "mdd":    round(float(current_mdd), 1),
-            "vol":    round(float(current_metrics.get("volatility_20d") or 15.0), 1),
+            "sharpe": round(current_sharpe, 2),
+            "mdd":    round(current_mdd, 1),
+            "vol":    round(current_vol, 1),
         },
         "projected": {
-            "sharpe": round(projected_sharpe, 2),
-            "mdd":    round(projected_mdd, 1),
+            "sharpe": projected_sharpe,
+            "mdd":    projected_mdd,
             "vol":    round(target_vol_pct, 1),
         },
         "dollar_impact": {
-            "equity_leg":       round(equity_impact, 0),
-            "bond_leg":         round(bond_impact, 0),
-            "total":            round(total_impact, 0),
+            "equity_leg":        round(equity_impact, 0),
+            "bond_leg":          round(bond_impact, 0),
+            "total":             round(total_impact, 0),
             "equity_allocation": equity_leg,
-            "bond_allocation":   bond_leg,
+            "bond_allocation":   notional * 0.40,
             "notional":          notional,
+            "method": (
+                f"Expected loss = equity × annual vol × √(20/252). "
+                f"Current expected loss: ${current_exp_loss:,.0f} → "
+                f"Projected: ${projected_exp_loss:,.0f}"
+            ),
         },
         "assumption": (
-            "Illustrative only. Assumes constant expected return, "
-            "proportional Sharpe compression, and vol-MDD sensitivity of 0.6. "
+            "Illustrative. 20-day horizon. 60/40 allocation proxy. "
             "Not financial advice."
         ),
     }

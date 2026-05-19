@@ -53,7 +53,9 @@ python pipeline/ingest.py --schedule
 | S2 | ≥ 60 rows | Log WARNING |
 | S3 | No future dates | Quarantine rows |
 | S4 | Join ≥ 3 shared months | Log ERROR, halt |
-| S5 | All dates UTC | Enforced |
+| S5 | Timezone normalisation | AV daily → UTC. FRED monthly → joined on
+|    |                        | DATE_TRUNC('month') then forward-filled   |
+|    |                        | across daily rows. Explicit, not assumed. |
 
 ### Gold
 | ID | Check | On Failure |
