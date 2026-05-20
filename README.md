@@ -1,5 +1,5 @@
 # Market Analytics Platform
-Case study for Really Big Bank — post-trade operations analytics.
+Case study
 
 Management needs external market benchmarks to contextualise bank
 performance against industry conditions. This platform automates
