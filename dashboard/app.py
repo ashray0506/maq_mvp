@@ -11,6 +11,11 @@ import duckdb
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
+import importlib.util as _ilu, pathlib as _pl
+_home_spec = _ilu.spec_from_file_location("home", _pl.Path(__file__).parent / "home.py")
+_home_mod  = _ilu.module_from_spec(_home_spec)
+_home_spec.loader.exec_module(_home_mod)
+render_home = _home_mod.render_home
 
 load_dotenv()
 
@@ -704,13 +709,20 @@ st.markdown(f"""
 /* Hide Streamlit default header */
 header[data-testid="stHeader"] {{ display: none; }}
 
-/* Column dividers */
+/* Column dividers — top-level three-column layout only */
 [data-testid="column"] {{
     background: {_P['card_bg']};
-    padding: 20px 20px !important;
+    padding: 16px 16px !important;
     border-right: 1px solid {_P['border']};
 }}
 [data-testid="column"]:last-child {{ border-right: none; }}
+
+/* Nested columns (filter bar, KPI row, judge buttons) — no extra padding */
+[data-testid="column"] [data-testid="column"] {{
+    background: transparent;
+    padding: 2px 4px !important;
+    border-right: none !important;
+}}
 
 /* Metric overrides */
 [data-testid="stMetric"] {{
@@ -828,23 +840,29 @@ label, .stSelectbox label, .stSlider label, .stRadio label,
     color: {_P['text_pri']} !important;
     background: {_P['hover_bg']} !important;
 }}
-/* Market Analytics + What-if — white active underline */
-[data-baseweb="tab-list"] button:nth-child(1)[aria-selected="true"],
-[data-baseweb="tab-list"] button:nth-child(2)[aria-selected="true"] {{
+/* Home (1st) — default underline */
+[data-baseweb="tab-list"] button:nth-child(1)[aria-selected="true"] {{
     color: {_P['text_pri']} !important;
     border-bottom: 3px solid {_P['text_pri']} !important;
     font-weight: 600 !important;
 }}
-/* Governance (3rd) — indigo */
-[data-baseweb="tab-list"] button:nth-child(3) {{ color: #818cf8 !important; }}
+/* Market Analytics + What-if (2nd, 3rd) — white active underline */
+[data-baseweb="tab-list"] button:nth-child(2)[aria-selected="true"],
 [data-baseweb="tab-list"] button:nth-child(3)[aria-selected="true"] {{
+    color: {_P['text_pri']} !important;
+    border-bottom: 3px solid {_P['text_pri']} !important;
+    font-weight: 600 !important;
+}}
+/* Governance (4th) — indigo */
+[data-baseweb="tab-list"] button:nth-child(4) {{ color: #818cf8 !important; }}
+[data-baseweb="tab-list"] button:nth-child(4)[aria-selected="true"] {{
     color: #a5b4fc !important;
     border-bottom: 3px solid #818cf8 !important;
     font-weight: 600 !important;
 }}
-/* Observability (4th) — teal */
-[data-baseweb="tab-list"] button:nth-child(4) {{ color: #34d399 !important; }}
-[data-baseweb="tab-list"] button:nth-child(4)[aria-selected="true"] {{
+/* Observability (5th) — teal */
+[data-baseweb="tab-list"] button:nth-child(5) {{ color: #34d399 !important; }}
+[data-baseweb="tab-list"] button:nth-child(5)[aria-selected="true"] {{
     color: #6ee7b7 !important;
     border-bottom: 3px solid #34d399 !important;
     font-weight: 600 !important;
@@ -863,22 +881,135 @@ div[data-testid="stHorizontalBlock"] button {{
     padding: 4px 8px !important;
 }}
 
-@media print {{
-    .stButton, .stSlider, .stSelectbox, .stRadio,
-    .stTextInput, .stNumberInput,
-    [data-testid="stExpander"] button,
-    [data-testid="stSidebar"], header, footer,
-    .screen-only {{ display: none !important; }}
-    .block-container {{ max-width: 100% !important; padding: 0 !important; }}
-    [data-testid="column"] {{ background: #ffffff !important; border: none !important; padding: 8px !important; }}
-    .stApp, .block-container {{
-        background: #ffffff !important; color: #000000 !important;
-    }}
-    .stPlotlyChart {{ page-break-inside: avoid; }}
-    .print-header, .print-only {{ display: block !important; }}
+@page {{
+    size: A4 landscape;
+    margin: 10mm 12mm;
 }}
-.print-header, .print-only {{ display: none; }}
-.screen-only {{ display: block; }}
+
+@media print {{
+    /* Force white background */
+    .stApp,
+    [data-testid="stAppViewContainer"],
+    [data-testid="stMain"],
+    .block-container,
+    [data-testid="column"],
+    .stPlotlyChart,
+    div[class*="css"] {{
+        background: #ffffff !important;
+        color: #1a1a2e !important;
+    }}
+
+    /* Remove Streamlit chrome */
+    header[data-testid="stHeader"],
+    [data-testid="stToolbar"],
+    [data-testid="stDecoration"],
+    [data-testid="stStatusWidget"],
+    footer {{ display: none !important; }}
+
+    /* Hide interactive controls */
+    [data-testid="stSelectbox"],
+    [data-testid="stSlider"],
+    [data-testid="stButton"],
+    [data-testid="stRadio"],
+    [data-testid="stTextInput"],
+    [data-testid="stNumberInput"],
+    .stButton {{ display: none !important; }}
+
+    /* Hide the view-controls expander entirely on print */
+    .view-controls-expander {{ display: none !important; }}
+
+    /* Show print-only elements */
+    .print-only {{ display: block !important; }}
+    .screen-only {{ display: none !important; }}
+
+    /* Full width, no padding */
+    .block-container {{
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }}
+
+    /* Keep three columns side by side */
+    [data-testid="stHorizontalBlock"] {{
+        display: flex !important;
+        flex-direction: row !important;
+        gap: 12px !important;
+        break-inside: avoid !important;
+    }}
+    [data-testid="column"] {{
+        flex: 1 !important;
+        border: 0.5px solid #e8eaed !important;
+        padding: 8px !important;
+        break-inside: avoid !important;
+    }}
+
+    /* Charts — avoid breaking across pages */
+    .stPlotlyChart {{
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+        max-height: 200px !important;
+    }}
+    .js-plotly-plot {{
+        max-height: 160px !important;
+        overflow: hidden !important;
+    }}
+    .js-plotly-plot .main-svg {{
+        max-height: 160px !important;
+    }}
+
+    /* Keep header together */
+    .print-header-block {{
+        break-inside: avoid !important;
+        margin-bottom: 8px !important;
+    }}
+
+    /* Reduce base font for print density — target text nodes, not all divs */
+    body, p, span, li {{
+        font-size: 10px !important;
+        line-height: 1.4 !important;
+    }}
+
+    /* KPI tiles — force colours and compact sizing for print */
+    [data-testid="stMetric"] {{
+        padding: 4px 6px !important;
+        border: 0.5px solid #e8eaed !important;
+    }}
+
+    /* Custom HTML KPI tiles — keep visible */
+    .stMarkdown div {{
+        border-color: #e8eaed !important;
+        background: #ffffff !important;
+        color: #1a1a2e !important;
+    }}
+
+    /* Prevent nested columns (KPI row) from stacking */
+    [data-testid="stHorizontalBlock"] [data-testid="stHorizontalBlock"] {{
+        display: flex !important;
+        flex-direction: row !important;
+        gap: 4px !important;
+    }}
+    [data-testid="stHorizontalBlock"] [data-testid="stHorizontalBlock"] [data-testid="column"] {{
+        flex: 1 !important;
+        padding: 4px !important;
+        border: none !important;
+    }}
+
+    /* Print footer */
+    .print-footer {{
+        page-break-before: avoid !important;
+        margin-top: 8px !important;
+        border-top: 0.5px solid #e8eaed !important;
+        padding-top: 4px !important;
+        font-size: 9px !important;
+        color: #9aa0a6 !important;
+    }}
+}}
+.print-header, .print-only {{ display: none !important; }}
+.screen-only {{ display: block !important; }}
+@media print {{
+    .print-only {{ display: block !important; }}
+    .screen-only {{ display: none !important; }}
+}}
 </style>
 <script>
 function setPeriod(days) {{
@@ -895,26 +1026,60 @@ function setPeriod(days) {{
 </script>
 """, unsafe_allow_html=True)
 
-# Print-only header (hidden on screen, shown when printing)
-st.markdown(f"""
-<div class="print-header" style="padding:16px 0 8px 0;border-bottom:2px solid #000;margin-bottom:16px;">
-  <div style="font-size:18px;font-weight:700;">Market Analytics Platform</div>
-  <div style="font-size:11px;color:#5f6368;">
-    Really Big Bank · Post-trade operations · Printed: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+# ---------------------------------------------------------------------------
+# Page-based navigation (no tabs — programmatic switching works)
+# ---------------------------------------------------------------------------
+PAGES = ["Home", "Market Analytics", "What-if",
+         "Governance", "Observability", "Architecture", "Runbook"]
+
+if "active_page" not in st.session_state:
+    st.session_state["active_page"] = "Home"
+
+# ── top nav bar (shown on every non-Home page) ──
+if st.session_state["active_page"] != "Home":
+    _nav_l, _nav_m, _nav_r = st.columns([1, 6, 1])
+    with _nav_l:
+        if st.button("← Home", key="back_home"):
+            st.session_state["active_page"] = "Home"
+            st.rerun()
+    with _nav_m:
+        st.markdown(
+            f'<div style="text-align:center;font-size:12px;color:{_P["text_sec"]};padding:6px 0;">'
+            f'Market Analytics · <strong style="color:{_P["text_pri"]};">'
+            f'{st.session_state["active_page"]}</strong></div>',
+            unsafe_allow_html=True,
+        )
+    with _nav_r:
+        _toggle_label = "☀️ Light" if _dark else "🌙 Dark"
+        if st.button(_toggle_label, key="dark_nav"):
+            st.session_state["dark_mode"] = not _dark
+            st.rerun()
+    st.markdown(
+        f'<hr style="border:none;border-top:0.5px solid {_P["border"]};margin:0 0 16px 0;"/>',
+        unsafe_allow_html=True,
+    )
+
+# ── page routing ──
+_page = st.session_state["active_page"]
+
+if _page == "Home":
+    render_home(get_connection(), _dark, _kimi_post)
+
+elif _page == "Market Analytics":
+
+    # Print-only header — hidden on screen, visible when printing
+    st.markdown(f"""
+<div class="print-only print-header-block" style="padding:0 0 10px 0;
+    border-bottom:1px solid #1a1a2e;margin-bottom:12px;">
+  <div style="font-size:16px;font-weight:600;color:#1a1a2e;">
+    Market Analytics — Really Big Bank
+  </div>
+  <div style="font-size:10px;color:#5f6368;margin-top:3px;">
+    Post-trade operations · Market benchmark report ·
+    Printed: {datetime.now().strftime('%Y-%m-%d %H:%M')}
   </div>
 </div>
 """, unsafe_allow_html=True)
-
-# ---------------------------------------------------------------------------
-# Top-level tabs — market content renders into tab_market by default;
-# governance content is explicitly wrapped at the bottom of this file.
-# ---------------------------------------------------------------------------
-tab_market, tab_whatif, tab_governance, tab_observability, tab_arch = st.tabs([
-    "📈 Market Analytics", "🔮 What-if", "📋 Governance", "🔬 Observability", "Architecture"
-])
-
-# Switch Streamlit's active container to tab_market for all content below
-with tab_market:
 
     # ---------------------------------------------------------------------------
     # CHECKPOINT: Load data
@@ -1003,8 +1168,8 @@ with tab_market:
         with _tb_right:
             _btn1, _btn2 = st.columns(2)
             with _btn1:
-                if st.button("🖨 Print", key="print_btn", use_container_width=True, help="Print or save as PDF"):
-                    st.markdown("<script>window.print();</script>", unsafe_allow_html=True)
+                st.button("🖨 Print", key="print_btn", use_container_width=True,
+                          help="Use ⌘P (Mac) or Ctrl+P (Windows) to print or save as PDF. Set orientation to Landscape in the print dialog.")
             with _btn2:
                 _toggle_label = "☀️ Light" if _dark else "🌙 Dark"
                 if st.button(_toggle_label, key="dark_mode_toggle", use_container_width=True):
@@ -1089,6 +1254,12 @@ with tab_market:
           <div style="font-size:22px;font-weight:500;color:{_P['text_pri']};line-height:1;">{macro_display}</div>
           <div style="font-size:11px;color:{_P['text_sec']};">risk-free rate</div>
         </div>
+        <div style="margin-left:auto;max-width:340px;text-align:right;">
+          <div style="font-size:12px;color:{'#FAC775' if _dark else '#633806'};font-style:italic;line-height:1.5;">
+            {get_market_pulse(_build_market_context(latest, []))}
+            <em style="font-size:10px;opacity:.6;margin-left:8px;font-style:normal;">AI</em>
+          </div>
+        </div>
       </div>
 
       <div style="display:flex;align-items:center;gap:16px;font-size:11px;color:{_P['text_body']};
@@ -1112,39 +1283,6 @@ with tab_market:
     except Exception as e:
         st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
         st.stop()
-
-    # Fix 21.2 — Amber pulse tile
-    CHECKPOINT = "market_pulse"
-    try:
-        _pulse_context = _build_market_context(latest, [])
-        _pulse = get_market_pulse(_pulse_context)
-
-        # Theme-aware amber colours
-        _pbg    = "#412402" if _dark else "#FAEEDA"
-        _pbdr   = "#BA7517" if _dark else "#EF9F27"
-        _ptxt   = "#FAC775" if _dark else "#633806"
-        _plbl   = "#EF9F27" if _dark else "#854F0B"
-
-        _pulse_col, _pulse_btn_col = st.columns([8, 1])
-        with _pulse_col:
-            st.markdown(f"""
-<div style="background:{_pbg};border:1px solid {_pbdr};border-radius:6px;
-            padding:10px 16px;display:flex;align-items:center;
-            justify-content:space-between;gap:16px;margin-top:4px;">
-  <span style="font-size:13px;color:{_ptxt};font-style:italic;line-height:1.5;flex:1;">
-    {_pulse}
-  </span>
-  <span style="font-size:10px;color:{_plbl};white-space:nowrap;flex-shrink:0;">
-    AI · auto-generated
-  </span>
-</div>
-""", unsafe_allow_html=True)
-        with _pulse_btn_col:
-            if st.button("↺", key="refresh_pulse", help="Regenerate market pulse"):
-                st.session_state.pop("market_pulse", None)
-                st.rerun()
-    except Exception:
-        pass
 
     st.divider()
 
@@ -1202,56 +1340,25 @@ with tab_market:
         st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
         st.stop()
 
-    # Filter bar — full width above three columns
+    # View controls — collapsible
     CHECKPOINT = "filter_bar"
     try:
-        st.markdown(f"""
-<div style="background:{_P['card_bg']};border:1px solid {_P['border']};
-            border-radius:6px;padding:8px 14px;margin-bottom:12px;">
-  <div style="font-size:9px;color:{_P['text_sec']};text-transform:uppercase;
-              letter-spacing:.1em;margin-bottom:6px;">View controls</div>
-""", unsafe_allow_html=True)
-        _fb1, _fb2, _fb3 = st.columns([0.8, 0.8, 2.4])
-        with _fb1:
-            _sel_sym = st.selectbox("Index", symbols, index=0, key="filter_symbol")
-        with _fb2:
-            _sel_mac = st.selectbox("Macro series", macro_series_list, index=0, key="filter_macro",
-                help="FEDFUNDS = Federal Funds Rate. GS10 = 10Y Treasury yield.")
-        with _fb3:
-            _fpresets = [("1M", 21), ("3M", 63), ("6M", 126), ("YTD", 252), ("Max", _max_days)]
-            _active = st.session_state["selected_days"]
-            _preset_html = '<div style="display:flex;gap:4px;margin-bottom:6px;">'
-            for _lbl, _days in _fpresets:
-                _dc = min(_days, _max_days)
-                _is_on = (_active == _dc)
-                _pbg = "#E6F1FB" if _is_on else "transparent"
-                _pbdr = "#378ADD" if _is_on else "#5f6368"
-                _pcol = "#0C447C" if _is_on else "#9aa0a6"
-                _pw = "600" if _is_on else "400"
-                _preset_html += (
-                    f'<button onclick="setPeriod({_dc})" '
-                    f'style="padding:4px 10px;border:0.5px solid {_pbdr};'
-                    f'border-radius:4px;background:{_pbg};color:{_pcol};'
-                    f'font-size:11px;font-weight:{_pw};cursor:pointer;'
-                    f'white-space:nowrap;font-family:system-ui,sans-serif;">'
-                    f'{_lbl}</button>'
-                )
-            _preset_html += '</div>'
-            st.markdown(_preset_html, unsafe_allow_html=True)
-            _period_val = st.number_input(
-                "period_hidden", min_value=21, max_value=_max_days,
-                value=st.session_state["selected_days"], step=1,
-                label_visibility="collapsed", key="period_input",
-            )
-            if _period_val != st.session_state["selected_days"]:
-                st.session_state["selected_days"] = _period_val
-                st.rerun()
-            lookback = st.slider("Fine-tune", min_value=21, max_value=_max_days,
-                                 value=st.session_state["selected_days"], step=7,
-                                 label_visibility="collapsed")
-            st.session_state["selected_days"] = lookback
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown('<div class="view-controls-expander">', unsafe_allow_html=True)
+        with st.expander("View controls", expanded=False):
+            _fb1, _fb2, _fb3 = st.columns([1, 1, 2])
+            with _fb1:
+                _sel_sym = st.selectbox("Index", symbols, index=0, key="filter_symbol")
+            with _fb2:
+                _sel_mac = st.selectbox("Macro series", macro_series_list, index=0,
+                    key="filter_macro",
+                    help="FEDFUNDS = Federal Funds Rate. GS10 = 10Y Treasury yield.")
+            with _fb3:
+                lookback = st.slider("Period (days)", min_value=21, max_value=_max_days,
+                                     value=st.session_state["selected_days"], step=7,
+                                     label_visibility="visible")
+                st.session_state["selected_days"] = lookback
 
+        st.markdown('</div>', unsafe_allow_html=True)
         selected_symbol = _sel_sym
         selected_macro  = _sel_mac
         if _sel_sym != st.session_state.get("_last_sym") or lookback != st.session_state.get("_last_lkb"):
@@ -1350,16 +1457,6 @@ with tab_market:
 
             _tile_colors = {"good": "#0f9d58", "warn": "#b45309", "bad": "#d93025", "na": "#9aa0a6"}
 
-            def kpi_tile(col, label, value, color, sublabel):
-                col.markdown(f"""
-<div style="border:1px solid {_P['border']};border-radius:6px;
-            padding:8px 12px;background:{_P['card_bg']};">
-  <div style="font-size:9px;color:{_P['text_sec']};text-transform:uppercase;letter-spacing:.06em;">{label}</div>
-  <div style="font-size:18px;font-weight:500;color:{_tile_colors[color]};line-height:1.2;">{value}</div>
-  <div style="font-size:10px;color:{_P['text_sec']};">{sublabel}</div>
-</div>
-""", unsafe_allow_html=True)
-
             # Use safe_float(latest, col) — always from filtered df
             _sv  = safe_float(latest, "sharpe_20d")
             _mv  = safe_float(latest, "mdd_90d")
@@ -1367,31 +1464,26 @@ with tab_market:
             _ev  = safe_float(latest, "vwap_efficiency")
             _spv = safe_float(latest, "yield_spread")
 
-            _sk1, _sk2 = st.columns(2)
-            kpi_tile(_sk1, "Sharpe 20d",
-                f"{_sv:.2f}" if _sv else "—",
-                "good" if _sv > 1 else "warn" if _sv >= 0 else "bad" if _sv else "na",
-                "risk-adjusted return" if _sv else "warmup period")
-            kpi_tile(_sk2, "Max drawdown 90d",
-                f"{_mv:.1f}%" if _mv else "—",
-                "good" if _mv > -10 else "warn" if _mv > -20 else "bad" if _mv else "na",
-                "controlled" if _mv > -10 else "elevated" if _mv else "warmup period")
-
-            _sk3, _sk4 = st.columns(2)
-            kpi_tile(_sk3, "Volatility 20d",
-                f"{_vv:.1f}%" if _vv else "—",
-                "good" if _vv < 12 else "warn" if _vv < 20 else "bad" if _vv else "na",
-                "low regime" if _vv < 12 else "elevated" if _vv >= 20 else "normal")
-            kpi_tile(_sk4, "VWAP efficiency",
-                f"{_ev:.1f}" if _ev else "—",
-                "good" if _ev > 97 else "warn" if _ev > 94 else "bad" if _ev else "na",
-                "orderly" if _ev > 97 else "deviation signal" if _ev else "normal")
-
-            _sk5, _ = st.columns([1, 1])
-            kpi_tile(_sk5, "Yield spread",
-                f"+{_spv:.2f}%" if _spv > 0 else f"{_spv:.2f}%" if _spv else "—",
-                "good" if _spv > 0.5 else "warn" if _spv >= 0 else "bad" if _spv else "na",
-                "normal curve" if _spv > 0.5 else "compressing" if _spv >= 0 else "inverted — caution")
+            _kpi_data = [
+                ("Sharpe 20d",      f"{_sv:.2f}" if _sv else "—",  "good" if _sv > 1 else "warn" if _sv >= 0 else "bad" if _sv else "na",  "risk-adj return" if _sv else "warmup"),
+                ("Max DD 90d",      f"{_mv:.1f}%" if _mv else "—", "good" if _mv > -10 else "warn" if _mv > -20 else "bad" if _mv else "na", "controlled" if _mv and _mv > -10 else "elevated" if _mv else "warmup"),
+                ("Volatility 20d",  f"{_vv:.1f}%" if _vv else "—", "good" if _vv and _vv < 12 else "warn" if _vv and _vv < 20 else "bad" if _vv else "na", "low" if _vv and _vv < 12 else "elevated" if _vv and _vv >= 20 else "normal"),
+                ("VWAP effic.",     f"{_ev:.1f}" if _ev else "—",  "good" if _ev and _ev > 97 else "warn" if _ev and _ev > 94 else "bad" if _ev else "na", "orderly" if _ev and _ev > 97 else "deviation" if _ev else "—"),
+                ("Yield spread",    f"+{_spv:.2f}%" if _spv and _spv > 0 else f"{_spv:.2f}%" if _spv else "—", "good" if _spv and _spv > 0.5 else "warn" if _spv and _spv >= 0 else "bad" if _spv else "na", "normal" if _spv and _spv > 0.5 else "compressing" if _spv and _spv >= 0 else "inverted"),
+            ]
+            _kpi_row = st.columns(5)
+            for _ki, (_klbl, _kval, _kcolor, _ksub) in enumerate(_kpi_data):
+                _kpi_row[_ki].markdown(f"""
+<div style="border:0.5px solid {_P['border']};border-radius:5px;
+            padding:6px 8px;background:{_P['card_bg']};">
+  <div style="font-size:8px;color:{_P['text_sec']};text-transform:uppercase;
+              letter-spacing:.06em;margin-bottom:2px;white-space:nowrap;overflow:hidden;
+              text-overflow:ellipsis;">{_klbl}</div>
+  <div style="font-size:14px;font-weight:500;color:{_tile_colors[_kcolor]};
+              line-height:1.2;">{_kval}</div>
+  <div style="font-size:9px;color:{_P['text_sec']};margin-top:1px;">{_ksub}</div>
+</div>
+""", unsafe_allow_html=True)
 
         except Exception as e:
             st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
@@ -1469,13 +1561,11 @@ with tab_market:
                 st.session_state["chat_history"] = []
             with st.expander("Ask about this data", expanded=False):
                 st.caption("Answers grounded in current market snapshot only. Not financial advice.")
-                _eq1, _eq2 = st.columns(2)
                 for _ei, _eq in enumerate([
                     "Why is RSI approaching overbought?", "What does the yield spread signal?",
                     "Has volatility been rising or falling?", "What would trigger a red signal?",
                 ]):
-                    (_eq1 if _ei % 2 == 0 else _eq2).button(_eq, key=f"eq_{_ei}",
-                        use_container_width=True,
+                    st.button(_eq, key=f"eq_{_ei}", use_container_width=True,
                         on_click=lambda q=_eq: st.session_state.update({"analyst_prefill": q}))
 
                 for msg in st.session_state["chat_history"]:
@@ -1796,7 +1886,7 @@ with tab_market:
         st.caption(f"Footer unavailable: {e}")
 
 
-with tab_governance:
+elif _page == "Governance":
     CHECKPOINT = "governance_tab"
     try:
         _gcon = get_connection()
@@ -1975,9 +2065,9 @@ with tab_governance:
         st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
 
 # ---------------------------------------------------------------------------
-# Observability tab
+# Observability page
 # ---------------------------------------------------------------------------
-with tab_observability:
+elif _page == "Observability":
     CHECKPOINT = "observability_tab"
     try:
         import plotly.graph_objects as _go
@@ -2156,9 +2246,9 @@ with tab_observability:
         st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
 
 # ---------------------------------------------------------------------------
-# What-if tab (Phase 2)
+# What-if page (Phase 2)
 # ---------------------------------------------------------------------------
-with tab_whatif:
+elif _page == "What-if":
     CHECKPOINT = "whatif_tab"
     try:
         import importlib.util as _ilu, pathlib as _pl, io as _io
@@ -2216,7 +2306,9 @@ with tab_whatif:
 </div>
 """, unsafe_allow_html=True)
 
-            _wi_latest = df.iloc[-1] if not df.empty else pd.Series({})
+            _wi_df = load_gold(st.session_state.get("selected_days", 90),
+                               st.session_state.get("filter_symbol", SYMBOL))
+            _wi_latest = _wi_df.iloc[-1] if not _wi_df.empty else pd.Series({})
             _cur_vol = float(_wi_latest.get("volatility_20d") or 15.0)
 
             if _scenario_type == "Volatility shock":
@@ -2411,9 +2503,9 @@ with tab_whatif:
         st.error(f"Checkpoint [{CHECKPOINT}] failed: {e}")
 
 # ---------------------------------------------------------------------------
-# Architecture tab (PRD Change 3)
+# Architecture page
 # ---------------------------------------------------------------------------
-with tab_arch:
+elif _page == "Architecture":
     import streamlit.components.v1 as _components
 
     # Remove all Streamlit padding above the iframe so it sits flush under the tab bar
@@ -2456,3 +2548,13 @@ with tab_arch:
         )
     except Exception as _ae:
         st.error(f"Architecture tab failed: {_ae}")
+
+# ---------------------------------------------------------------------------
+# Runbook page — static markdown
+# ---------------------------------------------------------------------------
+elif _page == "Runbook":
+    try:
+        with open("RUNBOOK.md", "r") as _rf:
+            st.markdown(_rf.read())
+    except FileNotFoundError:
+        st.warning("RUNBOOK.md not found in project root.")
