@@ -1,6 +1,7 @@
 .env
 data/
-*.duckdb
+# market.duckdb committed intentionally for Streamlit Cloud demo
+# normally excluded from version control
 .venv/
 logs/
 __pycache__/
